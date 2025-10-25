@@ -11,9 +11,11 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 
 	"github.com/docker/model-runner/pkg/diskusage"
+	"github.com/docker/model-runner/pkg/distribution/types"
 	"github.com/docker/model-runner/pkg/inference"
 	"github.com/docker/model-runner/pkg/inference/models"
 	"github.com/docker/model-runner/pkg/inference/platform"
@@ -105,18 +107,35 @@ func (v *vLLM) Run(ctx context.Context, socket, model string, modelRef string, m
 		return fmt.Errorf("failed to get model: %w", err)
 	}
 
+	var draftBundle types.ModelBundle
+	if backendConfig != nil && backendConfig.Speculative != nil && backendConfig.Speculative.DraftModel != "" {
+		draftBundle, err = v.modelManager.GetBundle(backendConfig.Speculative.DraftModel)
+		if err != nil {
+			return fmt.Errorf("failed to get draft model: %w", err)
+		}
+	}
+
 	if err := os.RemoveAll(socket); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		v.log.Warnf("failed to remove socket file %s: %v\n", socket, err)
 		v.log.Warnln("vLLM may not be able to start")
 	}
 
-	// Get arguments from config
 	args, err := v.config.GetArgs(bundle, socket, mode, backendConfig)
 	if err != nil {
 		return fmt.Errorf("failed to get vLLM arguments: %w", err)
 	}
 
-	// Add served model name
+	if draftBundle != nil && backendConfig != nil && backendConfig.Speculative != nil {
+		draftPath := draftBundle.SafetensorsPath()
+		if draftPath != "" {
+			args = append(args, "--speculative-model", filepath.Dir(draftPath))
+			if backendConfig.Speculative.NumTokens > 0 {
+				args = append(args, "--num-speculative-tokens", strconv.Itoa(backendConfig.Speculative.NumTokens))
+			}
+			args = append(args, "--use-v2-block-manager")
+		}
+	}
+
 	args = append(args, "--served-model-name", model, modelRef)
 
 	// Sanitize args for safe logging

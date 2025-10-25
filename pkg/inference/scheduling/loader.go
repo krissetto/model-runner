@@ -45,6 +45,8 @@ type runnerKey struct {
 	backend string
 	// modelID is the ID (digest) of the model associated with the runner.
 	modelID string
+	// draftModelID is the ID (digest) of the draft model for speculative decoding (empty if not used).
+	draftModelID string
 	// mode is the operation mode associated with the runner.
 	mode inference.BackendMode
 }
@@ -253,8 +255,12 @@ func (l *loader) Unload(ctx context.Context, unload UnloadRequest) int {
 		} else {
 			for _, model := range unload.Models {
 				modelID := l.modelManager.ResolveModelID(model)
-				delete(l.runnerConfigs, runnerKey{unload.Backend, modelID, inference.BackendModeCompletion})
-				delete(l.runnerConfigs, runnerKey{unload.Backend, modelID, inference.BackendModeEmbedding})
+				// Delete all runner configs for this model (including with different draft models)
+				for key := range l.runnerConfigs {
+					if key.backend == unload.Backend && key.modelID == modelID {
+						delete(l.runnerConfigs, key)
+					}
+				}
 				// Evict both, completion and embedding models. We should consider
 				// accepting a mode parameter in unload requests.
 				l.evictRunner(unload.Backend, modelID, inference.BackendModeCompletion)
@@ -391,8 +397,12 @@ func (l *loader) load(ctx context.Context, backendName, modelID, modelRef string
 	// Estimate the amount of memory that will be used by the model and check
 	// that we're even capable of loading it.
 	var runnerConfig *inference.BackendConfiguration
-	if rc, ok := l.runnerConfigs[runnerKey{backendName, modelID, mode}]; ok {
+	draftModelID := ""
+	if rc, ok := l.runnerConfigs[runnerKey{backendName, modelID, "", mode}]; ok {
 		runnerConfig = &rc
+		if runnerConfig.Speculative != nil && runnerConfig.Speculative.DraftModel != "" {
+			draftModelID = l.modelManager.ResolveModelID(runnerConfig.Speculative.DraftModel)
+		}
 	}
 	memory, err := backend.GetRequiredMemoryForModel(ctx, modelID, runnerConfig)
 	var parseErr *inference.ErrGGUFParse
@@ -453,7 +463,7 @@ func (l *loader) load(ctx context.Context, backendName, modelID, modelRef string
 		}
 
 		// See if we can satisfy the request with an existing runner.
-		existing, ok := l.runners[runnerKey{backendName, modelID, mode}]
+		existing, ok := l.runners[runnerKey{backendName, modelID, draftModelID, mode}]
 		if ok {
 			select {
 			case <-l.slots[existing.slot].done:
@@ -499,7 +509,7 @@ func (l *loader) load(ctx context.Context, backendName, modelID, modelRef string
 		// If we've identified a slot, then we're ready to start a runner.
 		if slot >= 0 {
 			var runnerConfig *inference.BackendConfiguration
-			if rc, ok := l.runnerConfigs[runnerKey{backendName, modelID, mode}]; ok {
+			if rc, ok := l.runnerConfigs[runnerKey{backendName, modelID, draftModelID, mode}]; ok {
 				runnerConfig = &rc
 			}
 			// Create the runner.
@@ -529,7 +539,7 @@ func (l *loader) load(ctx context.Context, backendName, modelID, modelRef string
 			// Perform registration and return the runner.
 			l.availableMemory.RAM -= memory.RAM
 			l.availableMemory.VRAM -= memory.VRAM
-			l.runners[runnerKey{backendName, modelID, mode}] = runnerInfo{slot, modelRef}
+			l.runners[runnerKey{backendName, modelID, draftModelID, mode}] = runnerInfo{slot, modelRef}
 			l.slots[slot] = runner
 			l.references[slot] = 1
 			l.allocations[slot].RAM = memory.RAM
@@ -558,21 +568,27 @@ func (l *loader) release(runner *runner) {
 	l.lock(context.Background())
 	defer l.unlock()
 
-	// Determine the runner's slot.
-	slot := l.runners[runnerKey{runner.backend.Name(), runner.model, runner.mode}]
+	// Find the runner's slot by iterating through runners
+	var slotInfo runnerInfo
+	for key, info := range l.runners {
+		if key.backend == runner.backend.Name() && key.modelID == runner.model && key.mode == runner.mode {
+			slotInfo = info
+			break
+		}
+	}
 
 	// Decrement the runner's reference count.
-	l.references[slot.slot] -= 1
+	l.references[slotInfo.slot] -= 1
 
 	// If the runner's reference count is now zero, then check if it is still
 	// active, and record now as its idle start time and signal the idle
 	// checker.
-	if l.references[slot.slot] == 0 {
+	if l.references[slotInfo.slot] == 0 {
 		select {
 		case <-runner.done:
 			l.evictRunner(runner.backend.Name(), runner.model, runner.mode)
 		default:
-			l.timestamps[slot.slot] = time.Now()
+			l.timestamps[slotInfo.slot] = time.Now()
 			select {
 			case l.idleCheck <- struct{}{}:
 			default:
@@ -588,7 +604,12 @@ func (l *loader) setRunnerConfig(ctx context.Context, backendName, modelID strin
 	l.lock(ctx)
 	defer l.unlock()
 
-	runnerId := runnerKey{backendName, modelID, mode}
+	draftModelID := ""
+	if runnerConfig.Speculative != nil && runnerConfig.Speculative.DraftModel != "" {
+		draftModelID = l.modelManager.ResolveModelID(runnerConfig.Speculative.DraftModel)
+	}
+
+	runnerId := runnerKey{backendName, modelID, draftModelID, mode}
 
 	// If the configuration hasn't changed, then just return.
 	if existingConfig, ok := l.runnerConfigs[runnerId]; ok && reflect.DeepEqual(runnerConfig, existingConfig) {

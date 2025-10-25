@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 
 	"github.com/docker/model-runner/pkg/distribution/types"
@@ -140,6 +141,14 @@ func (l *llamaCpp) Run(ctx context.Context, socket, model string, _ string, mode
 		return fmt.Errorf("failed to get model: %w", err)
 	}
 
+	var draftBundle types.ModelBundle
+	if config != nil && config.Speculative != nil && config.Speculative.DraftModel != "" {
+		draftBundle, err = l.modelManager.GetBundle(config.Speculative.DraftModel)
+		if err != nil {
+			return fmt.Errorf("failed to get draft model: %w", err)
+		}
+	}
+
 	if err := os.RemoveAll(socket); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		l.log.Warnf("failed to remove socket file %s: %w\n", socket, err)
 		l.log.Warnln("llama.cpp may not be able to start")
@@ -153,6 +162,19 @@ func (l *llamaCpp) Run(ctx context.Context, socket, model string, _ string, mode
 	args, err := l.config.GetArgs(bundle, socket, mode, config)
 	if err != nil {
 		return fmt.Errorf("failed to get args for llama.cpp: %w", err)
+	}
+
+	if draftBundle != nil && config != nil && config.Speculative != nil {
+		draftPath := draftBundle.GGUFPath()
+		if draftPath != "" {
+			args = append(args, "--draft", draftPath)
+			if config.Speculative.NumTokens > 0 {
+				args = append(args, "--draft-n", strconv.Itoa(config.Speculative.NumTokens))
+			}
+			if config.Speculative.MinAcceptanceRate > 0 {
+				args = append(args, "--draft-p-min", strconv.FormatFloat(config.Speculative.MinAcceptanceRate, 'f', 2, 64))
+			}
+		}
 	}
 
 	// Sanitize args for safe logging
@@ -266,11 +288,7 @@ func (l *llamaCpp) GetRequiredMemoryForModel(ctx context.Context, model string, 
 		ngl = 999
 	}
 
-	// TODO(p1-0tr): for now assume we are running on GPU (single one) - Devices[1];
-	// sum up weights + kv cache + context for an estimate of total GPU memory needed
-	// while running inference with the given model
 	estimate := mdlGguf.EstimateLLaMACppRun(parser.WithLLaMACppContextSize(int32(contextSize)),
-		// TODO(p1-0tr): add logic for resolving other param values, instead of hardcoding them
 		parser.WithLLaMACppLogicalBatchSize(2048),
 		parser.WithLLaMACppOffloadLayers(ngl))
 	ram := uint64(estimate.Devices[0].Weight.Sum() + estimate.Devices[0].KVCache.Sum() + estimate.Devices[0].Computation.Sum())
@@ -279,10 +297,50 @@ func (l *llamaCpp) GetRequiredMemoryForModel(ctx context.Context, model string, 
 		vram = uint64(estimate.Devices[1].Weight.Sum() + estimate.Devices[1].KVCache.Sum() + estimate.Devices[1].Computation.Sum())
 	}
 
+	if config != nil && config.Speculative != nil && config.Speculative.DraftModel != "" {
+		draftMemory, err := l.getDraftModelMemory(ctx, config.Speculative.DraftModel, contextSize, ngl)
+		if err != nil {
+			return inference.RequiredMemory{}, fmt.Errorf("estimating draft model memory: %w", err)
+		}
+		ram += draftMemory.RAM
+		vram += draftMemory.VRAM
+	}
+
 	if runtime.GOOS == "windows" && runtime.GOARCH == "arm64" {
-		// TODO(p1-0tr): For now on windows/arm64 stick to the old behaviour, of allowing
-		// one model at a time. This WA requires gpuinfo.GetVRAMSize to return 1.
 		vram = 1
+	}
+
+	return inference.RequiredMemory{
+		RAM:  ram,
+		VRAM: vram,
+	}, nil
+}
+
+func (l *llamaCpp) getDraftModelMemory(ctx context.Context, draftModel string, contextSize uint64, ngl uint64) (inference.RequiredMemory, error) {
+	var draftGguf *parser.GGUFFile
+	inStore, err := l.modelManager.IsModelInStore(draftModel)
+	if err != nil {
+		return inference.RequiredMemory{}, fmt.Errorf("checking if draft model is in local store: %w", err)
+	}
+	if inStore {
+		draftGguf, _, err = l.parseLocalModel(draftModel)
+		if err != nil {
+			return inference.RequiredMemory{}, &inference.ErrGGUFParse{Err: err}
+		}
+	} else {
+		draftGguf, _, err = l.parseRemoteModel(ctx, draftModel)
+		if err != nil {
+			return inference.RequiredMemory{}, &inference.ErrGGUFParse{Err: err}
+		}
+	}
+
+	estimate := draftGguf.EstimateLLaMACppRun(parser.WithLLaMACppContextSize(int32(contextSize)),
+		parser.WithLLaMACppLogicalBatchSize(2048),
+		parser.WithLLaMACppOffloadLayers(ngl))
+	ram := uint64(estimate.Devices[0].Weight.Sum() + estimate.Devices[0].KVCache.Sum() + estimate.Devices[0].Computation.Sum())
+	var vram uint64
+	if len(estimate.Devices) > 1 {
+		vram = uint64(estimate.Devices[1].Weight.Sum() + estimate.Devices[1].KVCache.Sum() + estimate.Devices[1].Computation.Sum())
 	}
 
 	return inference.RequiredMemory{

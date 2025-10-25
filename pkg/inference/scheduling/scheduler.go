@@ -427,6 +427,7 @@ func (s *Scheduler) Configure(w http.ResponseWriter, r *http.Request) {
 	var runnerConfig inference.BackendConfiguration
 	runnerConfig.ContextSize = configureRequest.ContextSize
 	runnerConfig.RuntimeFlags = runtimeFlags
+	runnerConfig.Speculative = configureRequest.Speculative
 
 	mode := inference.BackendModeCompletion
 	if slices.Contains(runnerConfig.RuntimeFlags, "--embeddings") {
