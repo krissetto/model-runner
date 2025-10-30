@@ -36,7 +36,7 @@ func handleClientError(err error, message string) error {
 		hooks.PrintNextSteps(&buf, []string{enableVLLM})
 		return fmt.Errorf("%w\n%s", err, strings.TrimRight(buf.String(), "\n"))
 	}
-	return errors.Join(err, errors.New(message))
+	return fmt.Errorf("%s: %w", message, err)
 }
 
 // stripDefaultsFromModelName removes the default "ai/" prefix and ":latest" tag for display.
