@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -114,6 +115,68 @@ func listModels(openai bool, desktopClient *desktop.Client, quiet bool, jsonForm
 }
 
 func prettyPrintModels(models []dmrm.Model) string {
+	type displayRow struct {
+		displayName string
+		tag         string
+		model       dmrm.Model
+	}
+
+	var rows []displayRow
+
+	for _, m := range models {
+		if len(m.Tags) == 0 {
+			rows = append(rows, displayRow{
+				displayName: "<none>",
+				tag:         "<none>",
+				model:       m,
+			})
+			continue
+		}
+
+		for _, tag := range m.Tags {
+			displayName := stripDefaultsFromModelName(tag)
+			rows = append(rows, displayRow{
+				displayName: displayName,
+				tag:         tag,
+				model:       m,
+			})
+		}
+	}
+
+	// Helper function to split display name into base and variant
+	splitDisplayName := func(displayName string) (base, variant string) {
+		if idx := strings.LastIndex(displayName, ":"); idx != -1 {
+			return displayName[:idx], displayName[idx+1:]
+		}
+		return displayName, ""
+	}
+
+	// Sort all rows by display name
+	sort.Slice(rows, func(i, j int) bool {
+		displayI := rows[i].displayName
+		displayJ := rows[j].displayName
+
+		// Split on last ':' to get base name and variant
+		baseI, variantI := splitDisplayName(displayI)
+		baseJ, variantJ := splitDisplayName(displayJ)
+
+		baseILower := strings.ToLower(baseI)
+		baseJLower := strings.ToLower(baseJ)
+		if baseILower != baseJLower {
+			return baseILower < baseJLower
+		}
+
+		// If base names are equal, compare variants
+		// Empty variants (no ':' in name) come first
+		if variantI == "" && variantJ != "" {
+			return true
+		}
+		if variantI != "" && variantJ == "" {
+			return false
+		}
+		return strings.ToLower(variantI) < strings.ToLower(variantJ)
+	})
+
 	var buf bytes.Buffer
 	table := tablewriter.NewWriter(&buf)
 
@@ -137,14 +200,8 @@ func prettyPrintModels(models []dmrm.Model) string {
 	})
 	table.SetHeaderAlignment(tablewriter.ALIGN_LEFT)
 
-	for _, m := range models {
-		if len(m.Tags) == 0 {
-			appendRow(table, "<none>", m)
-			continue
-		}
-		for _, tag := range m.Tags {
-			appendRow(table, tag, m)
-		}
+	for _, row := range rows {
+		appendRow(table, row.tag, row.model)
 	}
 
 	table.Render()
