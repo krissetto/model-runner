@@ -30,7 +30,7 @@ options:
     - option: gpu
       value_type: string
       default_value: auto
-      description: Specify GPU support (none|auto|cuda|musa)
+      description: Specify GPU support (none|auto|cuda|musa|rocm|cann)
       deprecated: false
       hidden: false
       experimental: false

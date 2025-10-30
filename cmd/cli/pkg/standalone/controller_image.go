@@ -40,6 +40,8 @@ func controllerImageVariant(detectedGPU gpupkg.GPUSupport, backend string) strin
 		return "rocm"
 	case gpupkg.GPUSupportMUSA:
 		return "musa"
+	case gpupkg.GPUSupportCANN:
+		return "cann"
 	default:
 		return ""
 	}

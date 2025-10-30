@@ -253,6 +253,8 @@ func runInstallOrStart(cmd *cobra.Command, opts runnerOptions) error {
 		gpu = gpupkg.GPUSupportROCm
 	} else if opts.gpuMode == "musa" {
 		gpu = gpupkg.GPUSupportMUSA
+	} else if opts.gpuMode == "cann" {
+		gpu = gpupkg.GPUSupportCANN
 	} else if opts.gpuMode != "none" {
 		return fmt.Errorf("unknown GPU specification: %q", opts.gpuMode)
 	}
@@ -313,7 +315,7 @@ func newInstallRunner() *cobra.Command {
 	c.Flags().Uint16Var(&port, "port", 0,
 		"Docker container port for Docker Model Runner (default: 12434 for Docker Engine, 12435 for Cloud mode)")
 	c.Flags().StringVar(&host, "host", "127.0.0.1", "Host address to bind Docker Model Runner")
-	c.Flags().StringVar(&gpuMode, "gpu", "auto", "Specify GPU support (none|auto|cuda|rocm|musa)")
+	c.Flags().StringVar(&gpuMode, "gpu", "auto", "Specify GPU support (none|auto|cuda|rocm|musa|cann)")
 	c.Flags().StringVar(&backend, "backend", "", backendUsage)
 	c.Flags().BoolVar(&doNotTrack, "do-not-track", false, "Do not track models usage in Docker Model Runner")
 	return c

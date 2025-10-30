@@ -17,6 +17,10 @@ add_accelerators() {
   render_gid=$(set +o pipefail; command getent group render 2>/dev/null | cut -d: -f3)
   if [[ -n "$render_gid" ]]; then
     args+=("--group-add" "$render_gid")
+    if [ -e "/dev/davinci_manager" ]; then
+      # ascend driver accessing group id is 1000(HwHiAiUser)
+      args+=("--group-add" "$(getent group HwHiAiUser | cut -d: -f3)")
+    fi
   fi
 }
 
@@ -28,6 +32,12 @@ add_optional_args() {
   if [ -n "${MODELS_PATH-}" ]; then
     args+=(-v "$MODELS_PATH:/models" -e MODELS_PATH=/models)
   fi
+
+  for i in /usr/local/dcmi /usr/local/bin/npu-smi /usr/local/Ascend/driver/lib64/ /usr/local/Ascend/driver/version.info /etc/ascend_install.info; do
+    if [ -e "$i" ]; then
+      args+=(-v "$i:$i")
+    fi
+  done
 
   if [ -n "${LLAMA_ARGS-}" ]; then
     args+=(-e "LLAMA_ARGS=$LLAMA_ARGS")
