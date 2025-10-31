@@ -153,7 +153,7 @@ func TestIntegration_PullModel(t *testing.T) {
 	require.NoError(t, err)
 
 	if len(models) != 0 {
-		t.Fatal("No models found after pull")
+		t.Fatal("Expected no initial models, but found some")
 	}
 
 	// Create and push a test model
@@ -174,7 +174,10 @@ func TestIntegration_PullModel(t *testing.T) {
 		t.Fatal("No models found after pull")
 	}
 
-	if strings.Contains(models, modelID) == false {
-		t.Fatalf("Pulled model ID %s not found in model list", modelID)
+	// Extract truncated ID format (sha256:xxx... -> xxx where xxx is 12 chars)
+	// listModels with quiet=true returns modelID[7:19]
+	truncatedID := modelID[7:19]
+	if strings.Contains(models, truncatedID) == false {
+		t.Fatalf("Pulled model ID %s (truncated: %s) not found in model list:\n%s", modelID, truncatedID, models)
 	}
 }

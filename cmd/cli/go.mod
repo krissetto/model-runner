@@ -22,6 +22,7 @@ require (
 	github.com/spf13/cobra v1.10.1
 	github.com/spf13/pflag v1.0.9
 	github.com/stretchr/testify v1.11.1
+	github.com/testcontainers/testcontainers-go v0.39.0
 	go.opentelemetry.io/otel v1.37.0
 	go.uber.org/mock v0.5.0
 	golang.org/x/sync v0.17.0
@@ -113,9 +114,6 @@ require (
 	github.com/shirou/gopsutil/v4 v4.25.6 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/smallnest/ringbuffer v0.0.0-20241116012123-461381446e3d // indirect
-	github.com/testcontainers/testcontainers-go v0.39.0 // indirect
-	github.com/testcontainers/testcontainers-go/modules/dockermodelrunner v0.39.0 // indirect
-	github.com/testcontainers/testcontainers-go/modules/socat v0.39.0 // indirect
 	github.com/theupdateframework/notary v0.7.1-0.20210315103452-bf96a202a09a // indirect
 	github.com/tklauser/go-sysconf v0.3.12 // indirect
 	github.com/tklauser/numcpus v0.6.1 // indirect

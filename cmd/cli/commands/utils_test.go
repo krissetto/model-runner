@@ -1,6 +1,8 @@
 package commands
 
 import (
+	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/docker/model-runner/pkg/inference/models"
@@ -153,10 +155,10 @@ func TestStripDefaultsFromModelName(t *testing.T) {
 // would create a model that couldn't be run with `docker model run my-model`.
 func TestNormalizeModelNameConsistency(t *testing.T) {
 	tests := []struct {
-		name                    string
-		userProvidedName        string
-		expectedNormalizedName  string
-		description             string
+		name                   string
+		userProvidedName       string
+		expectedNormalizedName string
+		description            string
 	}{
 		{
 			name:                   "locally packaged model without namespace",
@@ -188,9 +190,28 @@ func TestNormalizeModelNameConsistency(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			result := models.NormalizeModelName(tt.userProvidedName)
 			if result != tt.expectedNormalizedName {
-				t.Errorf("%s: NormalizeModelName(%q) = %q, want %q", 
+				t.Errorf("%s: NormalizeModelName(%q) = %q, want %q",
 					tt.description, tt.userProvidedName, result, tt.expectedNormalizedName)
 			}
 		})
 	}
+}
+
+// TestHandleClientErrorFormat verifies that the error format follows the expected pattern.
+func TestHandleClientErrorFormat(t *testing.T) {
+	t.Run("error format is message: original error", func(t *testing.T) {
+		originalErr := fmt.Errorf("network timeout")
+		message := "Failed to fetch data"
+
+		result := handleClientError(originalErr, message)
+
+		expected := fmt.Errorf("%s: %w", message, originalErr).Error()
+		if result.Error() != expected {
+			t.Errorf("Error format mismatch.\nExpected: %q\nGot: %q", expected, result.Error())
+		}
+
+		if !errors.Is(result, originalErr) {
+			t.Error("Error wrapping is not preserved - errors.Is() check failed")
+		}
+	})
 }
