@@ -205,18 +205,19 @@ func TestIntegration_PullModel(t *testing.T) {
 			expectedModelID:   modelID2,
 			expectedModelName: "ai/test-model:latest",
 		},
-		{
-			name:              "no org with tag (should default to ai/)",
-			pullRef:           "registry.local:5000/test-model:latest",
-			expectedModelID:   modelID2,
-			expectedModelName: "ai/test-model:latest",
-		},
-		{
-			name:              "no org and no tag (should default to ai/:latest)",
-			pullRef:           "registry.local:5000/test-model",
-			expectedModelID:   modelID2,
-			expectedModelName: "ai/test-model:latest",
-		},
+		// TODO: these tests require to override the default OCI registry,
+		//{
+		//	name:              "no org with tag (should default to ai/)",
+		//	pullRef:           "test-model:latest",
+		//	expectedModelID:   modelID2,
+		//	expectedModelName: "ai/test-model:latest",
+		//},
+		//{
+		//	name:              "no org and no tag (should default to ai/:latest)",
+		//	pullRef:           "test-model",
+		//	expectedModelID:   modelID2,
+		//	expectedModelName: "ai/test-model:latest",
+		//},
 	}
 
 	for _, tc := range testCases {
