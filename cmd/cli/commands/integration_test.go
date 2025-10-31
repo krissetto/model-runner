@@ -93,6 +93,12 @@ func dockerModelRunner(t *testing.T, ctx context.Context, net *testcontainers.Do
 	return dmrURL
 }
 
+// removeModel removes a model from the local store
+func removeModel(client *desktop.Client, modelID string) error {
+	_, err := client.Remove([]string{modelID}, true)
+	return err
+}
+
 // createAndPushTestModel creates a minimal test model and pushes it to the local registry.
 // Returns the model ID and FQDNs for host and network access.
 func createAndPushTestModel(t *testing.T, registryURL, modelRef string, contextSize uint64) (modelID, hostFQDN, networkFQDN string) {
@@ -146,6 +152,7 @@ func createAndPushTestModel(t *testing.T, registryURL, modelRef string, contextS
 }
 
 // TestIntegration_PullModel tests pulling a model from the local OCI registry via DMR
+// with various model reference formats to ensure proper normalization.
 func TestIntegration_PullModel(t *testing.T) {
 	env := setupTestEnv(t)
 
@@ -156,28 +163,95 @@ func TestIntegration_PullModel(t *testing.T) {
 		t.Fatal("Expected no initial models, but found some")
 	}
 
-	// Create and push a test model
-	modelRef := "test/test-model:latest"
-	modelID, hostFQDN, networkFQDN := createAndPushTestModel(t, env.registryURL, modelRef, 2048)
-	t.Logf("Test model pushed: %s", hostFQDN)
+	// Create and push two test models with different organizations
+	// Model 1: custom org (test/test-model:latest)
+	modelRef1 := "test/test-model:latest"
+	modelID1, hostFQDN1, networkFQDN1 := createAndPushTestModel(t, env.registryURL, modelRef1, 2048)
+	t.Logf("Test model 1 pushed: %s (ID: %s)", hostFQDN1, modelID1)
 
-	// Pull the model using the network alias (for inter-container communication)
-	// go-containerregistry automatically uses HTTP for single-word hostnames without dots
-	t.Logf("Pulling model %s", networkFQDN)
-	err = pullModel(newPullCmd(), env.client, networkFQDN, false)
-	require.NoError(t, err)
+	// Model 2: default org (ai/test-model:latest)
+	modelRef2 := "ai/test-model:latest"
+	modelID2, hostFQDN2, networkFQDN2 := createAndPushTestModel(t, env.registryURL, modelRef2, 2048)
+	t.Logf("Test model 2 pushed: %s (ID: %s)", hostFQDN2, modelID2)
 
-	models, err = listModels(false, env.client, true, false, "")
-	require.NoError(t, err)
-
-	if len(models) == 0 {
-		t.Fatal("No models found after pull")
+	// Test cases for different model reference formats
+	testCases := []struct {
+		name              string
+		pullRef           string // Reference to use when pulling
+		expectedModelID   string // Expected model ID after pull
+		expectedModelName string // Expected model name for logging
+	}{
+		{
+			name:              "explicit custom org and tag",
+			pullRef:           networkFQDN1, // registry.local:5000/test/test-model:latest
+			expectedModelID:   modelID1,
+			expectedModelName: "test/test-model:latest",
+		},
+		{
+			name:              "custom org without tag (should default to :latest)",
+			pullRef:           "registry.local:5000/test/test-model",
+			expectedModelID:   modelID1,
+			expectedModelName: "test/test-model:latest",
+		},
+		{
+			name:              "explicit default org and tag",
+			pullRef:           networkFQDN2, // registry.local:5000/ai/test-model:latest
+			expectedModelID:   modelID2,
+			expectedModelName: "ai/test-model:latest",
+		},
+		{
+			name:              "default org without tag (should default to :latest)",
+			pullRef:           "registry.local:5000/ai/test-model",
+			expectedModelID:   modelID2,
+			expectedModelName: "ai/test-model:latest",
+		},
+		{
+			name:              "no org with tag (should default to ai/)",
+			pullRef:           "registry.local:5000/test-model:latest",
+			expectedModelID:   modelID2,
+			expectedModelName: "ai/test-model:latest",
+		},
+		{
+			name:              "no org and no tag (should default to ai/:latest)",
+			pullRef:           "registry.local:5000/test-model",
+			expectedModelID:   modelID2,
+			expectedModelName: "ai/test-model:latest",
+		},
 	}
 
-	// Extract truncated ID format (sha256:xxx... -> xxx where xxx is 12 chars)
-	// listModels with quiet=true returns modelID[7:19]
-	truncatedID := modelID[7:19]
-	if strings.Contains(models, truncatedID) == false {
-		t.Fatalf("Pulled model ID %s (truncated: %s) not found in model list:\n%s", modelID, truncatedID, models)
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Pull the model using the test case reference
+			t.Logf("Pulling model with reference: %s", tc.pullRef)
+			err := pullModel(newPullCmd(), env.client, tc.pullRef, false)
+			require.NoError(t, err, "Failed to pull model with reference: %s", tc.pullRef)
+
+			// List models and verify the expected model is present
+			models, err := listModels(false, env.client, true, false, "")
+			require.NoError(t, err)
+
+			if len(models) == 0 {
+				t.Fatalf("No models found after pulling %s", tc.pullRef)
+			}
+
+			// Extract truncated ID format (sha256:xxx... -> xxx where xxx is 12 chars)
+			// listModels with quiet=true returns modelID[7:19]
+			truncatedID := tc.expectedModelID[7:19]
+			if !strings.Contains(models, truncatedID) {
+				t.Errorf("Expected model ID %s (truncated: %s) not found in model list after pulling %s.\nExpected model: %s\nModel list:\n%s",
+					tc.expectedModelID, truncatedID, tc.pullRef, tc.expectedModelName, models)
+			} else {
+				t.Logf("✓ Successfully verified model %s (ID: %s) after pulling with reference: %s",
+					tc.expectedModelName, truncatedID, tc.pullRef)
+			}
+
+			// Clean up: remove the model for the next test iteration
+			// Note: We use the full model ID for removal to ensure we remove the correct model
+			t.Logf("Removing model %s", truncatedID)
+			err = removeModel(env.client, tc.expectedModelID)
+			if err != nil {
+				t.Logf("Warning: Failed to remove model %s: %v (continuing anyway)", truncatedID, err)
+			}
+		})
 	}
 }
