@@ -42,8 +42,12 @@ model-distribution-tool:
 
 # Run the application locally
 run: build
-	LLAMA_ARGS="$(LLAMA_ARGS)" \
-	./$(APP_NAME)
+	@LLAMACPP_BIN="llamacpp/install/bin"; \
+	if [ "$(LOCAL_LLAMA)" = "1" ]; then \
+		echo "Using local llama.cpp build from $${LLAMACPP_BIN}"; \
+		export LLAMA_SERVER_PATH="$$(pwd)/$${LLAMACPP_BIN}"; \
+	fi; \
+	LLAMA_ARGS="$(LLAMA_ARGS)" ./$(APP_NAME)
 
 # Clean build artifacts
 clean:
@@ -154,9 +158,11 @@ help:
 	@echo ""
 	@echo "Backend configuration options:"
 	@echo "  LLAMA_ARGS    - Arguments for llama.cpp (e.g., \"--verbose --jinja -ngl 999 --ctx-size 2048\")"
+	@echo "  LOCAL_LLAMA   - Use local llama.cpp build from llamacpp/install/bin (set to 1 to enable)"
 	@echo ""
 	@echo "Example usage:"
 	@echo "  make run LLAMA_ARGS=\"--verbose --jinja -ngl 999 --ctx-size 2048\""
+	@echo "  make run LOCAL_LLAMA=1"
 	@echo "  make docker-run LLAMA_ARGS=\"--verbose --jinja -ngl 999 --threads 4 --ctx-size 2048\""
 	@echo ""
 	@echo "Model distribution tool examples:"
