@@ -59,7 +59,7 @@ func setupTestEnv(t *testing.T) *testEnv {
 func ociRegistry(t *testing.T, ctx context.Context, net *testcontainers.DockerNetwork) string {
 	t.Log("Starting OCI registry container...")
 	ctr, err := testcontainers.Run(
-		ctx, "registry:2",
+		ctx, "registry:3",
 		testcontainers.WithExposedPorts("5000/tcp"),
 		testcontainers.WithWaitStrategy(wait.ForHTTP("/v2/").WithPort("5000/tcp").WithStartupTimeout(30*time.Second)),
 		network.WithNetwork([]string{"registry.local"}, net),
@@ -80,6 +80,10 @@ func dockerModelRunner(t *testing.T, ctx context.Context, net *testcontainers.Do
 		ctx, "docker/model-runner:latest",
 		testcontainers.WithExposedPorts("12434/tcp"),
 		testcontainers.WithWaitStrategy(wait.ForHTTP("/engines/status").WithPort("12434/tcp").WithStartupTimeout(10*time.Second)),
+		testcontainers.WithEnv(map[string]string{
+			"DEFAULT_REGISTRY":  "registry.local:5000",
+			"INSECURE_REGISTRY": "true",
+		}),
 		network.WithNetwork([]string{"dmr"}, net),
 	)
 	require.NoError(t, err)
@@ -167,12 +171,12 @@ func TestIntegration_PullModel(t *testing.T) {
 	// Model 1: custom org (test/test-model:latest)
 	modelRef1 := "test/test-model:latest"
 	modelID1, hostFQDN1, networkFQDN1 := createAndPushTestModel(t, env.registryURL, modelRef1, 2048)
-	t.Logf("Test model 1 pushed: %s (ID: %s)", hostFQDN1, modelID1)
+	t.Logf("Test model 1 pushed: %s (ID: %s) FQDN: %s", hostFQDN1, modelID1, networkFQDN1)
 
 	// Model 2: default org (ai/test-model:latest)
 	modelRef2 := "ai/test-model:latest"
 	modelID2, hostFQDN2, networkFQDN2 := createAndPushTestModel(t, env.registryURL, modelRef2, 2048)
-	t.Logf("Test model 2 pushed: %s (ID: %s)", hostFQDN2, modelID2)
+	t.Logf("Test model 2 pushed: %s (ID: %s) FQDN: %s", hostFQDN2, modelID2, networkFQDN2)
 
 	// Test cases for different model reference formats
 	testCases := []struct {
@@ -183,7 +187,7 @@ func TestIntegration_PullModel(t *testing.T) {
 	}{
 		{
 			name:              "explicit custom org and tag",
-			pullRef:           networkFQDN1, // registry.local:5000/test/test-model:latest
+			pullRef:           "registry.local:5000/test/test-model:latest",
 			expectedModelID:   modelID1,
 			expectedModelName: "test/test-model:latest",
 		},
@@ -195,7 +199,7 @@ func TestIntegration_PullModel(t *testing.T) {
 		},
 		{
 			name:              "explicit default org and tag",
-			pullRef:           networkFQDN2, // registry.local:5000/ai/test-model:latest
+			pullRef:           "registry.local:5000/ai/test-model:latest",
 			expectedModelID:   modelID2,
 			expectedModelName: "ai/test-model:latest",
 		},
@@ -205,26 +209,25 @@ func TestIntegration_PullModel(t *testing.T) {
 			expectedModelID:   modelID2,
 			expectedModelName: "ai/test-model:latest",
 		},
-		// TODO: these tests require to override the default OCI registry,
-		//{
-		//	name:              "no org with tag (should default to ai/)",
-		//	pullRef:           "test-model:latest",
-		//	expectedModelID:   modelID2,
-		//	expectedModelName: "ai/test-model:latest",
-		//},
-		//{
-		//	name:              "no org and no tag (should default to ai/:latest)",
-		//	pullRef:           "test-model",
-		//	expectedModelID:   modelID2,
-		//	expectedModelName: "ai/test-model:latest",
-		//},
+		{
+			name:              "no org with tag (should default to ai/)",
+			pullRef:           "test-model:latest",
+			expectedModelID:   modelID2,
+			expectedModelName: "ai/test-model:latest",
+		},
+		{
+			name:              "no org and no tag (should default to ai/:latest)",
+			pullRef:           "test-model",
+			expectedModelID:   modelID2,
+			expectedModelName: "ai/test-model:latest",
+		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			// Pull the model using the test case reference
 			t.Logf("Pulling model with reference: %s", tc.pullRef)
-			err := pullModel(newPullCmd(), env.client, tc.pullRef, false)
+			err := pullModel(newPullCmd(), env.client, tc.pullRef, true)
 			require.NoError(t, err, "Failed to pull model with reference: %s", tc.pullRef)
 
 			// List models and verify the expected model is present
@@ -235,10 +238,12 @@ func TestIntegration_PullModel(t *testing.T) {
 				t.Fatalf("No models found after pulling %s", tc.pullRef)
 			}
 
+			models = strings.TrimSpace(models)
+
 			// Extract truncated ID format (sha256:xxx... -> xxx where xxx is 12 chars)
 			// listModels with quiet=true returns modelID[7:19]
 			truncatedID := tc.expectedModelID[7:19]
-			if !strings.Contains(models, truncatedID) {
+			if models != truncatedID {
 				t.Errorf("Expected model ID %s (truncated: %s) not found in model list after pulling %s.\nExpected model: %s\nModel list:\n%s",
 					tc.expectedModelID, truncatedID, tc.pullRef, tc.expectedModelName, models)
 			} else {
