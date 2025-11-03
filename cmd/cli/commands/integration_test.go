@@ -231,13 +231,13 @@ func TestIntegration_PullModel(t *testing.T) {
 			name:              "pull by digest with full registry path",
 			pullRef:           fmt.Sprintf("registry.local:5000/test/test-model@%s", digest1),
 			expectedModelID:   modelID1,
-			expectedModelName: "test/test-model (by digest)",
+			expectedModelName: "test/test-model",
 		},
 		{
 			name:              "pull by digest with default registry (using default org)",
 			pullRef:           fmt.Sprintf("test-model@%s", digest2),
 			expectedModelID:   modelID2,
-			expectedModelName: "ai/test-model (by digest)",
+			expectedModelName: "ai/test-model",
 		},
 	}
 
