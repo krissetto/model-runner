@@ -3,8 +3,9 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/docker/model-runner/cmd/cli/pkg/types"
 	"os"
+
+	"github.com/docker/model-runner/cmd/cli/pkg/types"
 
 	"github.com/docker/cli/cli-plugins/hooks"
 	"github.com/docker/model-runner/cmd/cli/commands/completion"
@@ -18,7 +19,7 @@ func newStatusCmd() *cobra.Command {
 		Use:   "status",
 		Short: "Check if the Docker Model Runner is running",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			standalone, err := ensureStandaloneRunnerAvailable(cmd.Context(), cmd)
+			standalone, err := ensureStandaloneRunnerAvailable(cmd.Context(), asPrinter(cmd))
 			if err != nil {
 				return fmt.Errorf("unable to initialize standalone model runner: %w", err)
 			}

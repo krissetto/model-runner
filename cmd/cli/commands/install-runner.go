@@ -223,7 +223,7 @@ func runInstallOrStart(cmd *cobra.Command, opts runnerOptions) error {
 
 	// If pruning containers (reinstall), remove any existing model runner containers.
 	if opts.pruneContainers {
-		if err := standalone.PruneControllerContainers(cmd.Context(), dockerClient, false, cmd); err != nil {
+		if err := standalone.PruneControllerContainers(cmd.Context(), dockerClient, false, asPrinter(cmd)); err != nil {
 			return fmt.Errorf("unable to remove model runner container(s): %w", err)
 		}
 	} else {
@@ -271,18 +271,18 @@ func runInstallOrStart(cmd *cobra.Command, opts runnerOptions) error {
 
 	// Ensure that we have an up-to-date copy of the image, if requested.
 	if opts.pullImage {
-		if err := standalone.EnsureControllerImage(cmd.Context(), dockerClient, gpu, opts.backend, cmd); err != nil {
+		if err := standalone.EnsureControllerImage(cmd.Context(), dockerClient, gpu, opts.backend, asPrinter(cmd)); err != nil {
 			return fmt.Errorf("unable to pull latest standalone model runner image: %w", err)
 		}
 	}
 
 	// Ensure that we have a model storage volume.
-	modelStorageVolume, err := standalone.EnsureModelStorageVolume(cmd.Context(), dockerClient, cmd)
+	modelStorageVolume, err := standalone.EnsureModelStorageVolume(cmd.Context(), dockerClient, asPrinter(cmd))
 	if err != nil {
 		return fmt.Errorf("unable to initialize standalone model storage: %w", err)
 	}
 	// Create the model runner container.
-	if err := standalone.CreateControllerContainer(cmd.Context(), dockerClient, port, opts.host, environment, opts.doNotTrack, gpu, opts.backend, modelStorageVolume, cmd, engineKind); err != nil {
+	if err := standalone.CreateControllerContainer(cmd.Context(), dockerClient, port, opts.host, environment, opts.doNotTrack, gpu, opts.backend, modelStorageVolume, asPrinter(cmd), engineKind); err != nil {
 		return fmt.Errorf("unable to initialize standalone model runner container: %w", err)
 	}
 
