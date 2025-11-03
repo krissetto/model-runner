@@ -58,6 +58,11 @@ func (cp *commandPrinter) Println(args ...any) {
 	cp.cmd.Println(args...)
 }
 
+// PrintErrf implements StatusPrinter.PrintErrf by delegating to cobra.Command.PrintErrf
+func (cp *commandPrinter) PrintErrf(format string, args ...any) {
+	cp.cmd.PrintErrf(format, args...)
+}
+
 // Write implements StatusPrinter.Write by delegating to cobra.Command's output writer
 func (cp *commandPrinter) Write(p []byte) (n int, err error) {
 	return cp.cmd.OutOrStdout().Write(p)

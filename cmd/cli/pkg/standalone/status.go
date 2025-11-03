@@ -2,10 +2,12 @@ package standalone
 
 // StatusPrinter is the interface used to print status updates.
 type StatusPrinter interface {
-	// Printf should perform formatted printing.
+	// Printf should perform formatted printing to stdout.
 	Printf(format string, args ...any)
-	// Println should perform line-based printing.
+	// Println should perform line-based printing to stdout.
 	Println(args ...any)
+	// PrintErrf should perform formatted printing to stderr.
+	PrintErrf(format string, args ...any)
 	// Write implements io.Writer for stream-based output.
 	Write(p []byte) (n int, err error)
 	// GetFdInfo returns the file descriptor and terminal status for the output.
@@ -20,6 +22,9 @@ func (*noopPrinter) Printf(format string, args ...any) {}
 
 // Println implements StatusPrinter.Println.
 func (*noopPrinter) Println(args ...any) {}
+
+// PrintErrf implements StatusPrinter.PrintErrf.
+func (*noopPrinter) PrintErrf(format string, args ...any) {}
 
 // Write implements StatusPrinter.Write.
 func (*noopPrinter) Write(p []byte) (n int, err error) {
