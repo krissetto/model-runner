@@ -38,20 +38,20 @@ func runUninstallOrStop(cmd *cobra.Command, opts cleanupOptions) error {
 	}
 
 	// Remove any model runner containers.
-	if err := standalone.PruneControllerContainers(cmd.Context(), dockerClient, false, cmd); err != nil {
+	if err := standalone.PruneControllerContainers(cmd.Context(), dockerClient, false, asPrinter(cmd)); err != nil {
 		return fmt.Errorf("unable to remove model runner container(s): %w", err)
 	}
 
 	// Remove model runner images, if requested.
 	if opts.removeImages {
-		if err := standalone.PruneControllerImages(cmd.Context(), dockerClient, cmd); err != nil {
+		if err := standalone.PruneControllerImages(cmd.Context(), dockerClient, asPrinter(cmd)); err != nil {
 			return fmt.Errorf("unable to remove model runner image(s): %w", err)
 		}
 	}
 
 	// Remove model storage, if requested.
 	if opts.models {
-		if err := standalone.PruneModelStorageVolumes(cmd.Context(), dockerClient, cmd); err != nil {
+		if err := standalone.PruneModelStorageVolumes(cmd.Context(), dockerClient, asPrinter(cmd)); err != nil {
 			return fmt.Errorf("unable to remove model storage volume(s): %w", err)
 		}
 	}
