@@ -103,6 +103,32 @@ func removeModel(client *desktop.Client, modelID string) error {
 	return err
 }
 
+// verifyModelInspect inspects a model using the given reference and verifies it matches expectations
+func verifyModelInspect(t *testing.T, client *desktop.Client, ref, expectedID, expectedDigest string) {
+	t.Helper()
+
+	model, err := client.Inspect(ref, false)
+	require.NoError(t, err, "Failed to inspect model with reference: %s", ref)
+
+	// Verify model ID matches
+	require.Equal(t, expectedID, model.ID,
+		"Model ID mismatch when inspecting with reference: %s. Expected: %s, Got: %s",
+		ref, expectedID, model.ID)
+
+	// Verify digest matches if provided
+	if expectedDigest != "" {
+		require.Equal(t, expectedDigest, model.ID,
+			"Model digest mismatch when inspecting with reference: %s. Expected: %s, Got: %s",
+			ref, expectedDigest, model.ID)
+	}
+
+	// Verify model has tags
+	require.NotEmpty(t, model.Tags, "Model should have at least one tag")
+
+	t.Logf("✓ Successfully inspected model with reference: %s (ID: %s, Tags: %v)",
+		ref, model.ID[7:19], model.Tags)
+}
+
 // createAndPushTestModel creates a minimal test model and pushes it to the local registry.
 // Returns the model ID, FQDNs for host and network access, and the manifest digest.
 func createAndPushTestModel(t *testing.T, registryURL, modelRef string, contextSize uint64) (modelID, hostFQDN, networkFQDN, digest string) {
@@ -234,7 +260,14 @@ func TestIntegration_PullModel(t *testing.T) {
 			expectedModelName: "test/test-model",
 		},
 		{
-			name:              "pull by digest with default registry (using default org)",
+			name:              "pull by digest with default registry",
+			pullRef:           fmt.Sprintf("ai/test-model@%s", digest2),
+			expectedModelID:   modelID2,
+			expectedModelName: "ai/test-model",
+		},
+
+		{
+			name:              "pull by digest with default registry and default org",
 			pullRef:           fmt.Sprintf("test-model@%s", digest2),
 			expectedModelID:   modelID2,
 			expectedModelName: "ai/test-model",
@@ -269,13 +302,111 @@ func TestIntegration_PullModel(t *testing.T) {
 					tc.expectedModelName, truncatedID, tc.pullRef)
 			}
 
+			// Verify inspect works with the same reference used for pulling
+			// Determine expected digest based on which model was pulled
+			expectedDigest := ""
+			if tc.expectedModelID == modelID1 {
+				expectedDigest = digest1
+			} else if tc.expectedModelID == modelID2 {
+				expectedDigest = digest2
+			}
+			verifyModelInspect(t, env.client, tc.pullRef, tc.expectedModelID, expectedDigest)
+
 			// Clean up: remove the model for the next test iteration
 			// Note: We use the full model ID for removal to ensure we remove the correct model
 			t.Logf("Removing model %s", truncatedID)
 			err = removeModel(env.client, tc.expectedModelID)
-			if err != nil {
-				t.Logf("Warning: Failed to remove model %s: %v (continuing anyway)", truncatedID, err)
-			}
+			require.NoError(t, err, "Failed to remove model")
 		})
 	}
+}
+
+// TestIntegration_InspectModel tests inspecting a model with various reference formats
+// to ensure proper reference normalization and consistent output.
+func TestIntegration_InspectModel(t *testing.T) {
+	env := setupTestEnv(t)
+
+	// Ensure no models exist initially
+	models, err := listModels(false, env.client, true, false, "")
+	require.NoError(t, err)
+	if len(models) != 0 {
+		t.Fatal("Expected no initial models, but found some")
+	}
+
+	// Create and push a test model with default org (ai/inspect-test:latest)
+	modelRef := "ai/inspect-test:latest"
+	modelID, hostFQDN, networkFQDN, digest := createAndPushTestModel(t, env.registryURL, modelRef, 2048)
+	t.Logf("Test model pushed: %s (ID: %s) FQDN: %s Digest: %s", hostFQDN, modelID, networkFQDN, digest)
+
+	// Pull the model using a short reference
+	pullRef := "inspect-test"
+	t.Logf("Pulling model with reference: %s", pullRef)
+	err = pullModel(newPullCmd(), env.client, pullRef, true)
+	require.NoError(t, err, "Failed to pull model")
+
+	// Verify the model was pulled
+	models, err = listModels(false, env.client, true, false, "")
+	require.NoError(t, err)
+	truncatedID := modelID[7:19]
+	require.Equal(t, truncatedID, strings.TrimSpace(models), "Model not found after pull")
+
+	// Test cases: different ways to reference the same model
+	testCases := []struct {
+		name string
+		ref  string
+	}{
+		{
+			name: "short form (no org, no tag)",
+			ref:  "inspect-test",
+		},
+		{
+			name: "with tag (no org)",
+			ref:  "inspect-test:latest",
+		},
+		{
+			name: "with org (no tag)",
+			ref:  "ai/inspect-test",
+		},
+		{
+			name: "fully qualified (org and tag)",
+			ref:  "ai/inspect-test:latest",
+		},
+		{
+			name: "with registry (fully qualified)",
+			ref:  "registry.local:5000/ai/inspect-test:latest",
+		},
+		{
+			name: "with registry (no tag)",
+			ref:  "registry.local:5000/ai/inspect-test",
+		},
+		{
+			name: "full model ID",
+			ref:  modelID,
+		},
+		{
+			name: "truncated model ID (12 chars)",
+			ref:  truncatedID,
+		},
+		{
+			name: "model ID without sha256 prefix",
+			ref:  strings.TrimPrefix(modelID, "sha256:"),
+		},
+	}
+
+	// Verify inspect works with all reference formats
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			verifyModelInspect(t, env.client, tc.ref, modelID, digest)
+		})
+	}
+
+	// Cleanup: remove the model
+	t.Logf("Removing model %s", truncatedID)
+	err = removeModel(env.client, modelID)
+	require.NoError(t, err, "Failed to remove model")
+
+	// Verify model was removed
+	models, err = listModels(false, env.client, true, false, "")
+	require.NoError(t, err)
+	require.Empty(t, strings.TrimSpace(models), "Model should be removed")
 }
