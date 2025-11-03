@@ -104,8 +104,8 @@ func removeModel(client *desktop.Client, modelID string) error {
 }
 
 // createAndPushTestModel creates a minimal test model and pushes it to the local registry.
-// Returns the model ID and FQDNs for host and network access.
-func createAndPushTestModel(t *testing.T, registryURL, modelRef string, contextSize uint64) (modelID, hostFQDN, networkFQDN string) {
+// Returns the model ID, FQDNs for host and network access, and the manifest digest.
+func createAndPushTestModel(t *testing.T, registryURL, modelRef string, contextSize uint64) (modelID, hostFQDN, networkFQDN, digest string) {
 	ctx := context.Background()
 
 	// Use the dummy GGUF file from assets
@@ -152,7 +152,13 @@ func createAndPushTestModel(t *testing.T, registryURL, modelRef string, contextS
 	require.NoError(t, err)
 	t.Logf("Model ID: %s", id)
 
-	return id, hostFQDN, networkFQDN
+	// Get the manifest digest
+	manifestDigest, err := pkg.Model().Digest()
+	require.NoError(t, err)
+	digest = manifestDigest.String()
+	t.Logf("Model digest: %s", digest)
+
+	return id, hostFQDN, networkFQDN, digest
 }
 
 // TestIntegration_PullModel tests pulling a model from the local OCI registry via DMR
@@ -170,13 +176,13 @@ func TestIntegration_PullModel(t *testing.T) {
 	// Create and push two test models with different organizations
 	// Model 1: custom org (test/test-model:latest)
 	modelRef1 := "test/test-model:latest"
-	modelID1, hostFQDN1, networkFQDN1 := createAndPushTestModel(t, env.registryURL, modelRef1, 2048)
-	t.Logf("Test model 1 pushed: %s (ID: %s) FQDN: %s", hostFQDN1, modelID1, networkFQDN1)
+	modelID1, hostFQDN1, networkFQDN1, digest1 := createAndPushTestModel(t, env.registryURL, modelRef1, 2048)
+	t.Logf("Test model 1 pushed: %s (ID: %s) FQDN: %s Digest: %s", hostFQDN1, modelID1, networkFQDN1, digest1)
 
 	// Model 2: default org (ai/test-model:latest)
 	modelRef2 := "ai/test-model:latest"
-	modelID2, hostFQDN2, networkFQDN2 := createAndPushTestModel(t, env.registryURL, modelRef2, 2048)
-	t.Logf("Test model 2 pushed: %s (ID: %s) FQDN: %s", hostFQDN2, modelID2, networkFQDN2)
+	modelID2, hostFQDN2, networkFQDN2, digest2 := createAndPushTestModel(t, env.registryURL, modelRef2, 2048)
+	t.Logf("Test model 2 pushed: %s (ID: %s) FQDN: %s Digest: %s", hostFQDN2, modelID2, networkFQDN2, digest2)
 
 	// Test cases for different model reference formats
 	testCases := []struct {
@@ -220,6 +226,18 @@ func TestIntegration_PullModel(t *testing.T) {
 			pullRef:           "test-model",
 			expectedModelID:   modelID2,
 			expectedModelName: "ai/test-model:latest",
+		},
+		{
+			name:              "pull by digest with full registry path",
+			pullRef:           fmt.Sprintf("registry.local:5000/test/test-model@%s", digest1),
+			expectedModelID:   modelID1,
+			expectedModelName: "test/test-model (by digest)",
+		},
+		{
+			name:              "pull by digest with default registry (using default org)",
+			pullRef:           fmt.Sprintf("test-model@%s", digest2),
+			expectedModelID:   modelID2,
+			expectedModelName: "ai/test-model (by digest)",
 		},
 	}
 
