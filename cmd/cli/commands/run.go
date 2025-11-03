@@ -675,7 +675,7 @@ func newRunCmd() *cobra.Command {
 				return nil
 			}
 
-			if _, err := ensureStandaloneRunnerAvailable(cmd.Context(), cmd); err != nil {
+			if _, err := ensureStandaloneRunnerAvailable(cmd.Context(), asPrinter(cmd)); err != nil {
 				return fmt.Errorf("unable to initialize standalone model runner: %w", err)
 			}
 

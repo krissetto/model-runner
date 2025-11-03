@@ -2,9 +2,7 @@ package standalone
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
 
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/client"
@@ -23,24 +21,13 @@ func EnsureControllerImage(ctx context.Context, dockerClient client.ImageAPIClie
 	}
 	defer out.Close()
 
-	// Decode and print status updates.
-	decoder := json.NewDecoder(out)
-	for {
-		var response jsonmessage.JSONMessage
-		if err := decoder.Decode(&response); err != nil {
-			if err == io.EOF {
-				break
-			}
-			return fmt.Errorf("failed to decode pull response: %w", err)
-		}
-
-		if response.ID != "" {
-			printer.Printf("\r%s: %s %s", response.ID, response.Status, response.ProgressMessage)
-		} else {
-			printer.Println(response.Status)
-		}
+	// Display pull progress using Docker's built-in display handler
+	fd, isTerminal := printer.GetFdInfo()
+	if err := jsonmessage.DisplayJSONMessagesStream(out, printer, fd, isTerminal, nil); err != nil {
+		return fmt.Errorf("failed to pull image %s: %w", imageName, err)
 	}
-	printer.Println("\nSuccessfully pulled", imageName)
+
+	printer.Println("Successfully pulled", imageName)
 	return nil
 }
 
