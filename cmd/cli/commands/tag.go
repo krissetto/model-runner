@@ -6,7 +6,7 @@ import (
 
 	"github.com/docker/model-runner/cmd/cli/commands/completion"
 	"github.com/docker/model-runner/cmd/cli/desktop"
-
+	"github.com/docker/model-runner/pkg/distribution/registry"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/spf13/cobra"
 )
@@ -38,7 +38,7 @@ func newTagCmd() *cobra.Command {
 
 func tagModel(cmd *cobra.Command, desktopClient *desktop.Client, source, target string) error {
 	// Ensure tag is valid
-	tag, err := name.NewTag(target)
+	tag, err := name.NewTag(target, registry.GetDefaultRegistryOptions()...)
 	if err != nil {
 		return fmt.Errorf("invalid tag: %w", err)
 	}
