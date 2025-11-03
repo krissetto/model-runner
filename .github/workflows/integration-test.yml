@@ -2,6 +2,7 @@ name: Integration Tests
 
 on:
   workflow_dispatch:  # Manual trigger only
+  push:
 
 jobs:
   integration-test:
