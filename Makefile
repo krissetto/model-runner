@@ -66,6 +66,13 @@ test:
 integration-tests:
 	@echo "Running integration tests..."
 	@echo "Note: This requires Docker to be running"
+	@echo "Checking test naming conventions..."
+	@INVALID_TESTS=$$(grep "^func Test" cmd/cli/commands/integration_test.go | grep -v "^func TestIntegration"); \
+	if [ -n "$$INVALID_TESTS" ]; then \
+		echo "Error: Found test functions that don't start with 'TestIntegration':"; \
+		echo "$$INVALID_TESTS" | sed 's/func \([^(]*\).*/\1/'; \
+		exit 1; \
+	fi
 	@BUILD_DMR=$(BUILD_DMR) go test -v -race -count=1 -run "^TestIntegration" -timeout=5m ./cmd/cli/commands
 	@echo "Integration tests completed!"
 
