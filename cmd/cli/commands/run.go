@@ -15,6 +15,7 @@ import (
 	"github.com/docker/model-runner/cmd/cli/commands/completion"
 	"github.com/docker/model-runner/cmd/cli/desktop"
 	"github.com/docker/model-runner/cmd/cli/readline"
+	"github.com/muesli/termenv"
 
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
@@ -715,6 +716,12 @@ func newRunCmd() *cobra.Command {
 
 			// Use enhanced readline-based interactive mode when terminal is available
 			if term.IsTerminal(int(os.Stdin.Fd())) {
+				// Initialize termenv with color caching before starting interactive session.
+				// This queries the terminal background color once and caches it, preventing
+				// OSC response sequences from appearing in stdin during the interactive loop.
+				termenv.SetDefaultOutput(
+					termenv.NewOutput(asPrinter(cmd), termenv.WithColorCache(true)),
+				)
 				return generateInteractiveWithReadline(cmd, desktopClient, model)
 			}
 
