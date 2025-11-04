@@ -73,7 +73,7 @@ integration-tests:
 		echo "$$INVALID_TESTS" | sed 's/func \([^(]*\).*/\1/'; \
 		exit 1; \
 	fi
-	@BUILD_DMR=$(BUILD_DMR) go test -v -race -count=1 -run "^TestIntegration" -timeout=5m ./cmd/cli/commands
+	@BUILD_DMR=$(BUILD_DMR) go test -v -race -count=1 -tags=integration -run "^TestIntegration" -timeout=5m ./cmd/cli/commands
 	@echo "Integration tests completed!"
 
 validate:
