@@ -19,6 +19,7 @@ import (
 	"github.com/docker/model-runner/pkg/distribution/registry"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
+	tc "github.com/testcontainers/testcontainers-go/modules/registry"
 	"github.com/testcontainers/testcontainers-go/network"
 	"github.com/testcontainers/testcontainers-go/wait"
 )
@@ -132,10 +133,7 @@ func setupTestEnv(t *testing.T) *testEnv {
 
 func ociRegistry(t *testing.T, ctx context.Context, net *testcontainers.DockerNetwork) string {
 	t.Log("Starting OCI registry container...")
-	ctr, err := testcontainers.Run(
-		ctx, "registry:3",
-		testcontainers.WithExposedPorts("5000/tcp"),
-		testcontainers.WithWaitStrategy(wait.ForHTTP("/v2/").WithPort("5000/tcp").WithStartupTimeout(30*time.Second)),
+	ctr, err := tc.Run(context.Background(), "registry:3",
 		network.WithNetwork([]string{"registry.local"}, net),
 	)
 	require.NoError(t, err)
