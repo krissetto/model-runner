@@ -66,7 +66,7 @@ test:
 integration-tests:
 	@echo "Running integration tests..."
 	@echo "Note: This requires Docker to be running"
-	@BUILD_DMR=$(BUILD_DMR) go test -v -race -count=1 -tags=integration -timeout=5m ./cmd/cli/commands/
+	@BUILD_DMR=$(BUILD_DMR) go test -v -race -count=1 -run "^TestIntegration" -timeout=5m ./cmd/cli/commands
 	@echo "Integration tests completed!"
 
 validate:
