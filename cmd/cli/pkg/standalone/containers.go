@@ -233,7 +233,7 @@ func isRootless(ctx context.Context, dockerClient *client.Client) bool {
 }
 
 // Check whether the host Ascend driver path exists. If so, create the corresponding mount configuration.
-func tryGetBindAscendMounts() []mount.Mount {
+func tryGetBindAscendMounts(printer StatusPrinter) []mount.Mount {
 	hostPaths := []string{
 		"/usr/local/dcmi",
 		"/usr/local/bin/npu-smi",
@@ -245,7 +245,7 @@ func tryGetBindAscendMounts() []mount.Mount {
 	for _, hostPath := range hostPaths {
 		matches, err := filepath.Glob(hostPath)
 		if err != nil {
-			fmt.Errorf("Error checking glob pattern for %s: %v", hostPath, err)
+			printer.PrintErrf("Error checking glob pattern for %s: %v\n", hostPath, err)
 			continue
 		}
 
@@ -258,7 +258,9 @@ func tryGetBindAscendMounts() []mount.Mount {
 			}
 			newMounts = append(newMounts, newMount)
 		} else {
-			fmt.Printf("  [NOT FOUND] Ascend driver path does not exist, skipping: %s\n", hostPath)
+			if os.Getenv("DEBUG") == "1" {
+				printer.Printf("[NOT FOUND] Ascend driver path does not exist, skipping: %s\n", hostPath)
+			}
 		}
 	}
 
@@ -309,7 +311,7 @@ func CreateControllerContainer(ctx context.Context, dockerClient *client.Client,
 			Name: "always",
 		},
 	}
-	ascendMounts := tryGetBindAscendMounts()
+	ascendMounts := tryGetBindAscendMounts(printer)
 	if len(ascendMounts) > 0 {
 		hostConfig.Mounts = append(hostConfig.Mounts, ascendMounts...)
 	}
