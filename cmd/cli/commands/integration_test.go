@@ -147,23 +147,29 @@ func ociRegistry(t *testing.T, ctx context.Context, net *testcontainers.DockerNe
 }
 
 func dockerModelRunner(t *testing.T, ctx context.Context, net *testcontainers.DockerNetwork) string {
+	containerCustomizerOpts := []testcontainers.ContainerCustomizer{
+		testcontainers.WithExposedPorts("12434/tcp"),
+		testcontainers.WithWaitStrategy(wait.ForHTTP("/engines/status").WithPort("12434/tcp").WithStartupTimeout(10 * time.Second)),
+		testcontainers.WithEnv(map[string]string{
+			"DEFAULT_REGISTRY":  "registry.local:5000",
+			"INSECURE_REGISTRY": "true",
+		}),
+		network.WithNetwork([]string{"dmr"}, net),
+	}
 	if os.Getenv("BUILD_DMR") == "1" {
 		t.Log("Building DMR container...")
 		out, err := exec.CommandContext(ctx, "make", "-C", "../../..", "docker-build").CombinedOutput()
 		if err != nil {
 			t.Fatalf("Failed to build DMR container: %v\n%s", err, out)
 		}
+	} else {
+		// Always pull the image if it's not build locally.
+		containerCustomizerOpts = append(containerCustomizerOpts, testcontainers.WithAlwaysPull())
 	}
 	t.Log("Starting DMR container...")
 	ctr, err := testcontainers.Run(
 		ctx, "docker/model-runner:latest",
-		testcontainers.WithExposedPorts("12434/tcp"),
-		testcontainers.WithWaitStrategy(wait.ForHTTP("/engines/status").WithPort("12434/tcp").WithStartupTimeout(10*time.Second)),
-		testcontainers.WithEnv(map[string]string{
-			"DEFAULT_REGISTRY":  "registry.local:5000",
-			"INSECURE_REGISTRY": "true",
-		}),
-		network.WithNetwork([]string{"dmr"}, net),
+		containerCustomizerOpts...,
 	)
 	require.NoError(t, err)
 	testcontainers.CleanupContainer(t, ctr)
