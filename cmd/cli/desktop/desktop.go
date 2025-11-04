@@ -257,7 +257,13 @@ func (c *Client) ListOpenAI() (dmrm.OpenAIModelList, error) {
 func (c *Client) Inspect(model string, remote bool) (dmrm.Model, error) {
 	model = normalizeHuggingFaceModelName(model)
 	if model != "" {
-		if !strings.Contains(strings.Trim(model, "/"), "/") {
+		// Only try to expand to model ID if the reference doesn't contain:
+		// - A slash (org/name format)
+		// - A colon (tagged reference like name:tag)
+		// - An @ symbol (digest reference like name@sha256:...)
+		if !strings.Contains(strings.Trim(model, "/"), "/") &&
+			!strings.Contains(model, ":") &&
+			!strings.Contains(model, "@") {
 			// Do an extra API call to check if the model parameter isn't a model ID.
 			modelId, err := c.fullModelID(model)
 			if err != nil {

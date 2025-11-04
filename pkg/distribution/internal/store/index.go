@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/google/go-containerregistry/pkg/name"
 
@@ -18,6 +19,12 @@ type Index struct {
 }
 
 func (i Index) Tag(reference string, tag string) (Index, error) {
+	// Remove @sha256 in case the reference is a digest
+	tag = strings.TrimSpace(tag)
+	if idx := strings.Index(tag, "@sha256"); idx != -1 {
+		tag = tag[:idx]
+	}
+	tag = strings.TrimPrefix(tag, reference)
 	tagRef, err := name.NewTag(tag, registry.GetDefaultRegistryOptions()...)
 	if err != nil {
 		return Index{}, fmt.Errorf("invalid tag: %w", err)

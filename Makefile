@@ -27,8 +27,11 @@ SOURCE ?=
 TAG ?=
 LICENSE ?=
 
+# Test configuration
+BUILD_DMR ?= 1
+
 # Main targets
-.PHONY: build run clean test docker-build docker-build-multiplatform docker-run docker-build-vllm docker-run-vllm docker-run-impl help validate model-distribution-tool
+.PHONY: build run clean test integration-tests docker-build docker-build-multiplatform docker-run docker-build-vllm docker-run-vllm docker-run-impl help validate model-distribution-tool
 # Default target
 .DEFAULT_GOAL := build
 
@@ -59,6 +62,19 @@ clean:
 # Run tests
 test:
 	go test -v ./...
+
+integration-tests:
+	@echo "Running integration tests..."
+	@echo "Note: This requires Docker to be running"
+	@echo "Checking test naming conventions..."
+	@INVALID_TESTS=$$(grep "^func Test" cmd/cli/commands/integration_test.go | grep -v "^func TestIntegration"); \
+	if [ -n "$$INVALID_TESTS" ]; then \
+		echo "Error: Found test functions that don't start with 'TestIntegration':"; \
+		echo "$$INVALID_TESTS" | sed 's/func \([^(]*\).*/\1/'; \
+		exit 1; \
+	fi
+	@BUILD_DMR=$(BUILD_DMR) go test -v -race -count=1 -tags=integration -run "^TestIntegration" -timeout=5m ./cmd/cli/commands
+	@echo "Integration tests completed!"
 
 validate:
 	find . -type f -name "*.sh" | xargs shellcheck
