@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -148,6 +149,13 @@ func ociRegistry(t *testing.T, ctx context.Context, net *testcontainers.DockerNe
 }
 
 func dockerModelRunner(t *testing.T, ctx context.Context, net *testcontainers.DockerNetwork) string {
+	if os.Getenv("BUILD_DMR") == "1" {
+		t.Log("Building DMR container...")
+		out, err := exec.CommandContext(ctx, "make", "-C", "../../..", "docker-build").CombinedOutput()
+		if err != nil {
+			t.Fatalf("Failed to build DMR container: %v\n%s", err, out)
+		}
+	}
 	t.Log("Starting DMR container...")
 	ctr, err := testcontainers.Run(
 		ctx, "docker/model-runner:latest",

@@ -27,6 +27,9 @@ SOURCE ?=
 TAG ?=
 LICENSE ?=
 
+# Test configuration
+BUILD_DMR ?= 1
+
 # Main targets
 .PHONY: build run clean test integration-tests docker-build docker-build-multiplatform docker-run docker-build-vllm docker-run-vllm docker-run-impl help validate model-distribution-tool
 # Default target
@@ -63,7 +66,7 @@ test:
 integration-tests:
 	@echo "Running integration tests..."
 	@echo "Note: This requires Docker to be running"
-	@go test -v -race -tags=integration -timeout=5m .
+	@BUILD_DMR=$(BUILD_DMR) go test -v -race -count=1 -tags=integration -timeout=5m ./cmd/cli/commands/
 	@echo "Integration tests completed!"
 
 validate:
