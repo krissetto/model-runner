@@ -462,3 +462,168 @@ func TestIntegration_InspectModel(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, strings.TrimSpace(models), "Model should be removed")
 }
+
+// TestIntegration_TagModel tests tagging a model with various source and target reference formats
+// to ensure proper reference normalization and tag creation.
+func TestIntegration_TagModel(t *testing.T) {
+	env := setupTestEnv(t)
+
+	// Ensure no models exist initially
+	models, err := listModels(false, env.client, true, false, "")
+	require.NoError(t, err)
+	if len(models) != 0 {
+		t.Fatal("Expected no initial models, but found some")
+	}
+
+	// Create and push a test model with default org (ai/tag-test:latest)
+	modelRef := "ai/tag-test:latest"
+	modelID, hostFQDN, networkFQDN, digest := createAndPushTestModel(t, env.registryURL, modelRef, 2048)
+	t.Logf("Test model pushed: %s (ID: %s) FQDN: %s Digest: %s", hostFQDN, modelID, networkFQDN, digest)
+
+	// Pull the model using a simple reference
+	pullRef := "tag-test"
+	t.Logf("Pulling model with reference: %s", pullRef)
+	err = pullModel(newPullCmd(), env.client, pullRef, true)
+	require.NoError(t, err, "Failed to pull model")
+
+	// Verify the model was pulled
+	models, err = listModels(false, env.client, true, false, "")
+	require.NoError(t, err)
+	truncatedID := modelID[7:19]
+	require.Equal(t, truncatedID, strings.TrimSpace(models), "Model not found after pull")
+
+	// Generate all possible source references using the unified system
+	sourceInfo := modelInfo{
+		name:         "tag-test",
+		org:          "ai",
+		tag:          "latest",
+		registry:     "registry.local:5000",
+		modelID:      modelID,
+		digest:       digest,
+		expectedName: "ai/tag-test:v1",
+	}
+	sourceRefs := generateReferenceTestCases(sourceInfo)
+
+	// Define target reference formats to test (including explicit registry references)
+	targetFormats := []struct {
+		name   string
+		target string
+	}{
+		{name: "simple name", target: "tag-test"},
+		{name: "simple name with tag", target: "target-tag-test:v2"},
+		{name: "with org", target: "ai/target-tag-test:latest"},
+		{name: "different org", target: "test/target-tag-test:v1"},
+		{name: "custom org", target: "custom/target-tag-test:cross-org"},
+		{name: "explicit registry with org", target: "registry.local:5000/ai/target-tag-test:explicit"},
+		{name: "explicit registry different org", target: "registry.local:5000/target-test/tag-test:fqdn"},
+		{name: "explicit registry custom org", target: "registry.local:5000/custom/target-tag-test:with-reg"},
+		{name: "explicit custom registry custom org", target: "other-registry.local:5000/custom/target-tag-test:with-reg"},
+	}
+
+	// Build test cases by combining source references with target formats
+	type tagTestCase struct {
+		name      string
+		sourceRef string
+		targetRef string
+	}
+
+	var testCases []tagTestCase
+
+	// Test all combinations of source references and target formats
+	for _, srcCase := range sourceRefs {
+
+		if strings.Contains(srcCase.name, "model ID") {
+			// Skip ID-based references for tagging tests
+			// TODO : Support tagging by ID in the future
+			continue
+		}
+
+		// Nested loop - test this source with ALL targets
+		for _, targetFormat := range targetFormats {
+			testCases = append(testCases, tagTestCase{
+				name:      fmt.Sprintf("source: %s -> target: %s", srcCase.name, targetFormat.name),
+				sourceRef: srcCase.ref,
+				targetRef: targetFormat.target,
+			})
+		}
+	}
+
+	// Track all created tags for verification
+	createdTags := make(map[string]bool)
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Logf("Tagging %s as %s", tc.sourceRef, tc.targetRef)
+
+			// Perform the tag operation
+			err := tagModel(newTagCmd(), env.client, tc.sourceRef, tc.targetRef)
+			require.NoError(t, err, "Failed to tag model with source=%s target=%s", tc.sourceRef, tc.targetRef)
+
+			// Track this tag
+			createdTags[tc.targetRef] = true
+
+			// Verify the new tag exists and points to the correct model
+			taggedModel, err := env.client.Inspect(tc.targetRef, false)
+			require.NoError(t, err, "Failed to inspect newly tagged model with reference: %s", tc.targetRef)
+
+			// Verify the model ID matches the original
+			require.Equal(t, modelID, taggedModel.ID,
+				"Tagged model ID mismatch. Expected: %s, Got: %s", modelID, taggedModel.ID)
+
+			// Verify the digest matches
+			require.Equal(t, digest, taggedModel.ID,
+				"Tagged model digest mismatch. Expected: %s, Got: %s", digest, taggedModel.ID)
+
+			t.Logf("✓ Successfully created tag %s pointing to model %s", tc.targetRef, truncatedID)
+
+			// Verify the original source tag/reference still exists
+			originalModel, err := env.client.Inspect(tc.sourceRef, false)
+			require.NoError(t, err, "Original source reference should still be valid: %s", tc.sourceRef)
+			require.Equal(t, modelID, originalModel.ID, "Original source should point to same model")
+			t.Logf("✓ Verified original source %s still exists", tc.sourceRef)
+		})
+	}
+
+	// Final verification: List the model and verify all tags are present
+	t.Run("verify all tags in model inspect", func(t *testing.T) {
+		inspectedModel, err := env.client.Inspect(modelID, false)
+		require.NoError(t, err, "Failed to inspect model by ID")
+
+		t.Logf("Model has %d tags: %v", len(inspectedModel.Tags), inspectedModel.Tags)
+
+		// The model should have at least the original tag plus all created tags
+		require.GreaterOrEqual(t, len(inspectedModel.Tags), len(createdTags)+1,
+			"Model should have at least %d tags (original + created)", len(createdTags)+1)
+
+		// Verify each created tag is in the model's tag list
+		for expectedTag := range createdTags {
+			found := false
+			for _, actualTag := range inspectedModel.Tags {
+				if actualTag == expectedTag || actualTag == fmt.Sprintf("%s:latest", expectedTag) { // Handle implicit latest tag
+					found = true
+					break
+				}
+			}
+			require.True(t, found, "Expected tag %s not found in model's tag list", expectedTag)
+		}
+
+		t.Logf("✓ All %d created tags verified in model's tag list", len(createdTags))
+	})
+
+	// Test error case: tagging non-existent model
+	t.Run("error on non-existent model", func(t *testing.T) {
+		err := tagModel(newTagCmd(), env.client, "non-existent-model:v1", "ai/should-fail:latest")
+		require.Error(t, err, "Should fail when tagging non-existent model")
+		t.Logf("✓ Correctly failed to tag non-existent model: %v", err)
+	})
+
+	// Cleanup: remove the model
+	t.Logf("Removing model %s", truncatedID)
+	err = removeModel(env.client, modelID)
+	require.NoError(t, err, "Failed to remove model")
+
+	// Verify model was removed
+	models, err = listModels(false, env.client, true, false, "")
+	require.NoError(t, err)
+	require.Empty(t, strings.TrimSpace(models), "Model should be removed")
+}
