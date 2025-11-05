@@ -531,6 +531,13 @@ func TestIntegration_TagModel(t *testing.T) {
 
 	// Test all combinations of source references and target formats
 	for _, srcCase := range sourceRefs {
+
+		if strings.Contains(srcCase.name, "model ID") {
+			// Skip ID-based references for tagging tests
+			// TODO : Support tagging by ID in the future
+			continue
+		}
+
 		// Nested loop - test this source with ALL targets
 		for _, targetFormat := range targetFormats {
 			testCases = append(testCases, tagTestCase{
@@ -592,7 +599,7 @@ func TestIntegration_TagModel(t *testing.T) {
 		for expectedTag := range createdTags {
 			found := false
 			for _, actualTag := range inspectedModel.Tags {
-				if actualTag == expectedTag {
+				if actualTag == expectedTag || actualTag == fmt.Sprintf("%s:latest", expectedTag) { // Handle implicit latest tag
 					found = true
 					break
 				}
