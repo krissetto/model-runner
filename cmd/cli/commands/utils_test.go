@@ -137,6 +137,31 @@ func TestStripDefaultsFromModelName(t *testing.T) {
 			input:    "",
 			expected: "",
 		},
+		{
+			name:     "docker.io registry with ai prefix and latest tag",
+			input:    "docker.io/ai/gemma3:latest",
+			expected: "gemma3",
+		},
+		{
+			name:     "index.docker.io registry with ai prefix and latest tag",
+			input:    "index.docker.io/ai/gemma3:latest",
+			expected: "gemma3",
+		},
+		{
+			name:     "docker.io registry with ai prefix and custom tag",
+			input:    "docker.io/ai/gemma3:v1",
+			expected: "gemma3:v1",
+		},
+		{
+			name:     "docker.io registry with custom org and latest tag",
+			input:    "docker.io/myorg/gemma3:latest",
+			expected: "myorg/gemma3",
+		},
+		{
+			name:     "index.docker.io registry with custom org and latest tag",
+			input:    "index.docker.io/myorg/gemma3:latest",
+			expected: "myorg/gemma3",
+		},
 	}
 
 	for _, tt := range tests {
