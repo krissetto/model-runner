@@ -23,8 +23,8 @@ jobs:
 
       - name: Log in to DockerHub
         env:
-          DOCKERHUB_USERNAME: ${{ vars.DOCKERBUILDBOT_USERNAME }}
-          DOCKERHUB_TOKEN: ${{ secrets.DOCKERBUILDBOT_WRITE_PAT }}
+          DOCKERHUB_USERNAME: "docker"
+          DOCKERHUB_TOKEN: ${{ secrets.ORG_ACCESS_TOKEN }}
         run: crane auth login index.docker.io -u "$DOCKERHUB_USERNAME" -p "$DOCKERHUB_TOKEN"
 
       - name: Promote CPU images
