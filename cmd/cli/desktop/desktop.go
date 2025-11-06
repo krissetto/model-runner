@@ -266,10 +266,9 @@ func (c *Client) Inspect(model string, remote bool) (dmrm.Model, error) {
 			!strings.Contains(model, "@") {
 			// Do an extra API call to check if the model parameter isn't a model ID.
 			modelId, err := c.fullModelID(model)
-			if err != nil {
-				return dmrm.Model{}, fmt.Errorf("invalid model name: %s", model)
+			if err == nil {
+				model = modelId
 			}
-			model = modelId
 		}
 	}
 	rawResponse, err := c.listRawWithQuery(fmt.Sprintf("%s/%s", inference.ModelsPrefix, model), model, remote)
