@@ -7,6 +7,7 @@ Restart Docker Model Runner (Docker Engine only)
 
 | Name             | Type     | Default     | Description                                                                                            |
 |:-----------------|:---------|:------------|:-------------------------------------------------------------------------------------------------------|
+| `--debug`        | `bool`   |             | Enable debug logging                                                                                   |
 | `--do-not-track` | `bool`   |             | Do not track models usage in Docker Model Runner                                                       |
 | `--gpu`          | `string` | `auto`      | Specify GPU support (none\|auto\|cuda\|musa\|rocm\|cann)                                               |
 | `--host`         | `string` | `127.0.0.1` | Host address to bind Docker Model Runner                                                               |
