@@ -65,10 +65,10 @@ func configFromFile(path string) types.Config {
 }
 
 var (
-	// spaceBeforeUnitRegex matches one or more spaces between a number/decimal and a letter (unit)
+	// spaceBeforeUnitRegex matches one or more spaces between a valid number and a letter (unit)
 	// Used to remove spaces between numbers and units (e.g., "16.78 M" -> "16.78M")
-	// Pattern: digits/decimals, then whitespace, then letters (unit)
-	spaceBeforeUnitRegex = regexp.MustCompile(`([0-9.]+)\s+([A-Za-z]+)`)
+	// Pattern: integer or decimal number, then whitespace, then letters (unit)
+	spaceBeforeUnitRegex = regexp.MustCompile(`([0-9]+(?:\.[0-9]+)?)\s+([A-Za-z]+)`)
 )
 
 // normalizeUnitString removes spaces between numbers and units for consistent formatting

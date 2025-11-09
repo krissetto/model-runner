@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strings"
 
 	"github.com/docker/go-units"
 )
@@ -193,7 +192,5 @@ func formatParameters(params int64) string {
 // formatSize converts bytes to human-readable format matching Docker's style
 // Returns format like "256MB" (decimal units, no space, matching `docker images`)
 func formatSize(bytes int64) string {
-	formatted := units.HumanSize(float64(bytes))
-	// Remove space between number and unit to match Docker format (e.g., "256 MB" -> "256MB")
-	return strings.ReplaceAll(formatted, " ", "")
+	return units.CustomSize("%.2f%s", float64(bytes), 1000.0, []string{"B", "kB", "MB", "GB", "TB", "PB", "EB"})
 }
