@@ -11,6 +11,7 @@ func newReinstallRunner() *cobra.Command {
 	var gpuMode string
 	var backend string
 	var doNotTrack bool
+	var debug bool
 	c := &cobra.Command{
 		Use:   "reinstall-runner",
 		Short: "Reinstall Docker Model Runner (Docker Engine only)",
@@ -23,7 +24,7 @@ func newReinstallRunner() *cobra.Command {
 				doNotTrack:      doNotTrack,
 				pullImage:       true,
 				pruneContainers: true,
-			})
+			}, debug)
 		},
 		ValidArgsFunction: completion.NoComplete,
 	}
@@ -33,5 +34,6 @@ func newReinstallRunner() *cobra.Command {
 	c.Flags().StringVar(&gpuMode, "gpu", "auto", "Specify GPU support (none|auto|cuda|musa|rocm|cann)")
 	c.Flags().StringVar(&backend, "backend", "", backendUsage)
 	c.Flags().BoolVar(&doNotTrack, "do-not-track", false, "Do not track models usage in Docker Model Runner")
+	c.Flags().BoolVar(&debug, "debug", false, "Enable debug logging")
 	return c
 }
