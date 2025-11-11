@@ -744,7 +744,7 @@ func newRunCmd() *cobra.Command {
 
 	c.Flags().BoolVar(&debug, "debug", false, "Enable debug logging")
 	c.Flags().BoolVar(&ignoreRuntimeMemoryCheck, "ignore-runtime-memory-check", false, "Do not block pull if estimated runtime memory for model exceeds system resources.")
-	c.Flags().StringVar(&colorMode, "color", "auto", "Use colored output (auto|yes|no)")
+	c.Flags().StringVar(&colorMode, "color", "no", "Use colored output (auto|yes|no)")
 	c.Flags().BoolVarP(&detach, "detach", "d", false, "Load the model in the background without interaction")
 
 	return c
