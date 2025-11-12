@@ -1,6 +1,7 @@
 package gguf_test
 
 import (
+	"encoding/json"
 	"path/filepath"
 	"testing"
 
@@ -91,6 +92,51 @@ func TestGGUF(t *testing.T) {
 				t.Fatalf("Expected layer with media type %s, got %s", types.MediaTypeGGUF, manifest.Layers[0].MediaType)
 			}
 		})
+
+		t.Run("TestAnnotations", func(t *testing.T) {
+			manifest, err := mdl.Manifest()
+			if err != nil {
+				t.Fatalf("Failed to get manifest: %v", err)
+			}
+			if len(manifest.Layers) != 1 {
+				t.Fatalf("Expected 1 layer, got %d", len(manifest.Layers))
+			}
+
+			layer := manifest.Layers[0]
+			if layer.Annotations == nil {
+				t.Fatal("Expected annotations to be present")
+			}
+
+			// Check for required annotation keys
+			if _, ok := layer.Annotations[types.AnnotationFilePath]; !ok {
+				t.Errorf("Expected annotation %s to be present", types.AnnotationFilePath)
+			}
+
+			if _, ok := layer.Annotations[types.AnnotationFileMetadata]; !ok {
+				t.Errorf("Expected annotation %s to be present", types.AnnotationFileMetadata)
+			}
+
+			if val, ok := layer.Annotations[types.AnnotationMediaTypeUntested]; !ok {
+				t.Errorf("Expected annotation %s to be present", types.AnnotationMediaTypeUntested)
+			} else if val != "false" {
+				t.Errorf("Expected annotation %s to be 'false', got '%s'", types.AnnotationMediaTypeUntested, val)
+			}
+
+			// Verify file metadata can be unmarshaled
+			metadataJSON := layer.Annotations[types.AnnotationFileMetadata]
+			var metadata types.FileMetadata
+			if err := json.Unmarshal([]byte(metadataJSON), &metadata); err != nil {
+				t.Fatalf("Failed to unmarshal file metadata: %v", err)
+			}
+
+			// Verify metadata fields
+			if metadata.Name != "dummy.gguf" {
+				t.Errorf("Expected file name 'dummy.gguf', got '%s'", metadata.Name)
+			}
+			if metadata.Size == 0 {
+				t.Error("Expected file size to be non-zero")
+			}
+		})
 	})
 }
 
@@ -175,6 +221,50 @@ func TestGGUFShards(t *testing.T) {
 			}
 			if manifest.Layers[0].MediaType != types.MediaTypeGGUF {
 				t.Fatalf("Expected layer with media type %s, got %s", types.MediaTypeGGUF, manifest.Layers[0].MediaType)
+			}
+		})
+
+		t.Run("TestAnnotations", func(t *testing.T) {
+			manifest, err := mdl.Manifest()
+			if err != nil {
+				t.Fatalf("Failed to get manifest: %v", err)
+			}
+			if len(manifest.Layers) != 2 {
+				t.Fatalf("Expected 2 layers, got %d", len(manifest.Layers))
+			}
+
+			// Check annotations for each shard
+			for i, layer := range manifest.Layers {
+				if layer.Annotations == nil {
+					t.Fatalf("Expected annotations to be present in layer %d", i)
+				}
+
+				// Check for required annotation keys
+				if _, ok := layer.Annotations[types.AnnotationFilePath]; !ok {
+					t.Errorf("Expected annotation %s to be present in layer %d", types.AnnotationFilePath, i)
+				}
+
+				if _, ok := layer.Annotations[types.AnnotationFileMetadata]; !ok {
+					t.Errorf("Expected annotation %s to be present in layer %d", types.AnnotationFileMetadata, i)
+				}
+
+				if val, ok := layer.Annotations[types.AnnotationMediaTypeUntested]; !ok {
+					t.Errorf("Expected annotation %s to be present in layer %d", types.AnnotationMediaTypeUntested, i)
+				} else if val != "false" {
+					t.Errorf("Expected annotation %s to be 'false' in layer %d, got '%s'", types.AnnotationMediaTypeUntested, i, val)
+				}
+
+				// Verify file metadata can be unmarshaled
+				metadataJSON := layer.Annotations[types.AnnotationFileMetadata]
+				var metadata types.FileMetadata
+				if err := json.Unmarshal([]byte(metadataJSON), &metadata); err != nil {
+					t.Fatalf("Failed to unmarshal file metadata in layer %d: %v", i, err)
+				}
+
+				// Verify metadata fields
+				if metadata.Size == 0 {
+					t.Errorf("Expected file size to be non-zero in layer %d", i)
+				}
 			}
 		})
 	})
