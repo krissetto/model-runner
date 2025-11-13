@@ -2,6 +2,7 @@ package gguf_test
 
 import (
 	"encoding/json"
+	"path"
 	"path/filepath"
 	"testing"
 
@@ -108,8 +109,13 @@ func TestGGUF(t *testing.T) {
 			}
 
 			// Check for required annotation keys
-			if _, ok := layer.Annotations[types.AnnotationFilePath]; !ok {
+			filePath, ok := layer.Annotations[types.AnnotationFilePath]
+			if !ok {
 				t.Errorf("Expected annotation %s to be present", types.AnnotationFilePath)
+			}
+
+			if filePath != path.Base("dummy.gguf") {
+				t.Errorf("Expected file path annotation to be '%s', got '%s'", path.Base("dummy.gguf"), filePath)
 			}
 
 			if _, ok := layer.Annotations[types.AnnotationFileMetadata]; !ok {
@@ -135,6 +141,21 @@ func TestGGUF(t *testing.T) {
 			}
 			if metadata.Size == 0 {
 				t.Error("Expected file size to be non-zero")
+			}
+			if metadata.Typeflag != 0 {
+				t.Errorf("Expected Typeflag 0 for regular file, got %d", metadata.Typeflag)
+			}
+			if metadata.Mode == 0 {
+				t.Error("Expected file mode to be non-zero")
+			}
+			if metadata.ModTime.IsZero() {
+				t.Error("Expected modification time to be set")
+			}
+			if metadata.Uid != 0 {
+				t.Error("Expected Uid to be set with default 0")
+			}
+			if metadata.Gid != 0 {
+				t.Error("Expected Gid to be set with default 0")
 			}
 		})
 	})
