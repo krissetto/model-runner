@@ -21,7 +21,7 @@ import (
 	"github.com/docker/model-runner/pkg/inference/memory"
 	"github.com/docker/model-runner/pkg/logging"
 	"github.com/docker/model-runner/pkg/middleware"
-	v1 "github.com/google/go-containerregistry/pkg/v1"
+	v1 "github.com/docker/model-runner/pkg/go-containerregistry/pkg/v1"
 	"github.com/sirupsen/logrus"
 )
 

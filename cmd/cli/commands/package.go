@@ -17,7 +17,7 @@ import (
 	"github.com/docker/model-runner/pkg/distribution/tarball"
 	"github.com/docker/model-runner/pkg/distribution/types"
 
-	"github.com/google/go-containerregistry/pkg/name"
+	"github.com/docker/model-runner/pkg/go-containerregistry/pkg/name"
 	"github.com/spf13/cobra"
 
 	"github.com/docker/model-runner/cmd/cli/commands/completion"

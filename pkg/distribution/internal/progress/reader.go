@@ -3,7 +3,7 @@ package progress
 import (
 	"io"
 
-	"github.com/google/go-containerregistry/pkg/v1"
+	"github.com/docker/model-runner/pkg/go-containerregistry/pkg/v1"
 )
 
 // Reader wraps an io.Reader to track reading progress

@@ -6,7 +6,7 @@ import (
 	"io"
 	"time"
 
-	v1 "github.com/google/go-containerregistry/pkg/v1"
+	v1 "github.com/docker/model-runner/pkg/go-containerregistry/pkg/v1"
 )
 
 // UpdateInterval defines how often progress updates should be sent

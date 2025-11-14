@@ -11,7 +11,7 @@ import (
 	"github.com/docker/model-runner/cmd/cli/desktop"
 	"github.com/docker/model-runner/cmd/cli/pkg/standalone"
 	"github.com/docker/model-runner/pkg/inference/backends/vllm"
-	"github.com/google/go-containerregistry/pkg/name"
+	"github.com/docker/model-runner/pkg/go-containerregistry/pkg/name"
 	"github.com/moby/term"
 	"github.com/spf13/cobra"
 )

@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/google/go-containerregistry/pkg/v1/static"
-	ggcr "github.com/google/go-containerregistry/pkg/v1/types"
+	"github.com/docker/model-runner/pkg/go-containerregistry/pkg/v1/static"
+	ggcr "github.com/docker/model-runner/pkg/go-containerregistry/pkg/v1/types"
 
 	"github.com/docker/model-runner/pkg/distribution/internal/gguf"
 	"github.com/docker/model-runner/pkg/distribution/internal/mutate"

@@ -7,7 +7,7 @@ import (
 	"github.com/docker/model-runner/cmd/cli/commands/completion"
 	"github.com/docker/model-runner/cmd/cli/desktop"
 	"github.com/docker/model-runner/pkg/distribution/registry"
-	"github.com/google/go-containerregistry/pkg/name"
+	"github.com/docker/model-runner/pkg/go-containerregistry/pkg/name"
 	"github.com/spf13/cobra"
 )
 
