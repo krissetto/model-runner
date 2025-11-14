@@ -17,6 +17,7 @@ import (
 	"github.com/docker/model-runner/pkg/distribution/registry"
 	"github.com/docker/model-runner/pkg/distribution/tarball"
 	"github.com/docker/model-runner/pkg/distribution/types"
+	"github.com/docker/model-runner/pkg/go-containerregistry/pkg/v1/remote"
 	"github.com/docker/model-runner/pkg/inference/platform"
 )
 
@@ -140,23 +141,89 @@ func NewClient(opts ...Option) (*Client, error) {
 func (c *Client) PullModel(ctx context.Context, reference string, progressWriter io.Writer) error {
 	c.log.Infoln("Starting model pull:", utils.SanitizeForLog(reference))
 
+	// First, fetch the remote model to get the manifest
 	remoteModel, err := c.registry.Model(ctx, reference)
 	if err != nil {
 		return fmt.Errorf("reading model from registry: %w", err)
 	}
 
-	// Check for supported type
-	if err := checkCompat(remoteModel, c.log, reference); err != nil {
-		return err
-	}
-
-	// Get the remote image digest
+	// Get the remote image digest immediately to ensure we work with a consistent manifest
+	// This prevents race conditions if the tag is updated during the pull
 	remoteDigest, err := remoteModel.Digest()
 	if err != nil {
 		c.log.Errorln("Failed to get remote image digest:", err)
 		return fmt.Errorf("getting remote image digest: %w", err)
 	}
 	c.log.Infoln("Remote model digest:", remoteDigest.String())
+
+	// Check for incomplete downloads and prepare resume offsets
+	layers, err := remoteModel.Layers()
+	if err != nil {
+		return fmt.Errorf("getting layers: %w", err)
+	}
+
+	// Build a map of digest -> resume offset for layers with incomplete downloads
+	resumeOffsets := make(map[string]int64)
+	for _, layer := range layers {
+		digest, err := layer.Digest()
+		if err != nil {
+			c.log.Warnf("Failed to get layer digest: %v", err)
+			continue
+		}
+
+		// Check if there's an incomplete download for this layer (use DiffID for uncompressed models)
+		diffID, err := layer.DiffID()
+		if err != nil {
+			c.log.Warnf("Failed to get layer diffID: %v", err)
+			continue
+		}
+
+		incompleteSize, err := c.store.GetIncompleteSize(diffID)
+		if err != nil {
+			c.log.Warnf("Failed to check incomplete size for layer %s: %v", digest, err)
+			continue
+		}
+
+		if incompleteSize > 0 {
+			c.log.Infof("Found incomplete download for layer %s: %d bytes", digest, incompleteSize)
+			resumeOffsets[digest.String()] = incompleteSize
+		}
+	}
+
+	// If we have any incomplete downloads, create a new context with resume offsets
+	// and re-fetch using the digest to ensure we're resuming the same manifest
+	if len(resumeOffsets) > 0 {
+		c.log.Infof("Resuming %d interrupted layer download(s)", len(resumeOffsets))
+		ctx = remote.WithResumeOffsets(ctx, resumeOffsets)
+		// Re-fetch the model using the digest reference to prevent race conditions
+		// Extract repository name from the original reference and construct digest reference
+		repository := reference
+		// Find the last occurrence of : or @ (tag or digest separator)
+		// We need to search after the last / to avoid matching port separators
+		if lastSlash := strings.LastIndex(reference, "/"); lastSlash != -1 {
+			// Search for : or @ after the last slash
+			suffix := reference[lastSlash:]
+			if idx := strings.IndexAny(suffix, ":@"); idx != -1 {
+				repository = reference[:lastSlash+idx]
+			}
+		} else {
+			// No slash found, search from beginning (e.g., "library/image:tag" or "image:tag")
+			if idx := strings.IndexAny(reference, ":@"); idx != -1 {
+				repository = reference[:idx]
+			}
+		}
+		digestReference := repository + "@" + remoteDigest.String()
+		c.log.Infof("Re-fetching model with digest reference: %s", utils.SanitizeForLog(digestReference))
+		remoteModel, err = c.registry.Model(ctx, digestReference)
+		if err != nil {
+			return fmt.Errorf("reading model from registry with resume context: %w", err)
+		}
+	}
+
+	// Check for supported type
+	if err := checkCompat(remoteModel, c.log, reference); err != nil {
+		return err
+	}
 
 	// Check if model exists in local store
 	localModel, err := c.store.Read(remoteDigest.String())

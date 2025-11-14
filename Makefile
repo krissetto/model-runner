@@ -77,7 +77,7 @@ integration-tests:
 	@echo "Integration tests completed!"
 
 validate:
-	find . -type f -name "*.sh" | xargs shellcheck
+	find . -type f -name "*.sh" | grep -v pkg/go-containerregistry | xargs shellcheck
 
 # Build Docker image
 docker-build:
