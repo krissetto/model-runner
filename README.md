@@ -41,6 +41,9 @@ docker version
 
 # Check Docker Model Runner version
 docker model version
+
+# Run a model to test the full setup
+docker model run ai/gemma3 "Hello"
 ```
 
 If `docker model` is not available, see the troubleshooting section below.
@@ -349,45 +352,6 @@ The response will contain the model's reply:
   }
 }
 ```
-
-## NVIDIA NIM Support
-
-Docker Model Runner supports running NVIDIA NIM (NVIDIA Inference Microservices) containers directly. This provides a simplified workflow for deploying NVIDIA's optimized inference containers.
-
-### Prerequisites
-
-- Docker with NVIDIA GPU support (nvidia-docker2 or Docker with NVIDIA Container Runtime)
-- NGC API Key (optional, but required for some NIM models)
-- Docker login to nvcr.io registry
-
-### Quick Start
-
-1. **Login to NVIDIA Container Registry:**
-
-```bash
-docker login nvcr.io
-Username: $oauthtoken
-Password: <PASTE_API_KEY_HERE>
-```
-
-2. **Set NGC API Key (if required by the model):**
-
-```bash
-export NGC_API_KEY=<PASTE_API_KEY_HERE>
-```
-
-3. **Run a NIM model:**
-
-```bash
-docker model run nvcr.io/nim/google/gemma-3-1b-it:latest
-```
-
-That's it! The Docker Model Runner will:
-- Automatically detect that this is a NIM image
-- Pull the NIM container image
-- Configure it with proper GPU support, shared memory (16GB), and NGC credentials
-- Start the container and wait for it to be ready
-- Provide an interactive chat interface
 
 ### Features
 
