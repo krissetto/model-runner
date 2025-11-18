@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/google/go-containerregistry/pkg/registry"
+	"github.com/docker/model-runner/pkg/go-containerregistry/pkg/registry"
 
 	"github.com/docker/model-runner/pkg/distribution/builder"
 	reg "github.com/docker/model-runner/pkg/distribution/registry"

@@ -10,7 +10,7 @@ import (
 
 	"github.com/docker/model-runner/pkg/distribution/builder"
 	"github.com/docker/model-runner/pkg/distribution/types"
-	v1 "github.com/google/go-containerregistry/pkg/v1"
+	v1 "github.com/docker/model-runner/pkg/go-containerregistry/pkg/v1"
 )
 
 func TestBuilder(t *testing.T) {

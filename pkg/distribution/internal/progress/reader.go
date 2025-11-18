@@ -3,7 +3,7 @@ package progress
 import (
 	"io"
 
-	"github.com/google/go-containerregistry/pkg/v1"
+	"github.com/docker/model-runner/pkg/go-containerregistry/pkg/v1"
 )
 
 // Reader wraps an io.Reader to track reading progress
@@ -21,6 +21,19 @@ func NewReader(r io.Reader, updates chan<- v1.Update) io.Reader {
 	return &Reader{
 		Reader:       r,
 		ProgressChan: updates,
+	}
+}
+
+// NewReaderWithOffset returns a reader that reports progress starting from an initial offset.
+// This is useful for resuming interrupted downloads.
+func NewReaderWithOffset(r io.Reader, updates chan<- v1.Update, initialOffset int64) io.Reader {
+	if updates == nil {
+		return r
+	}
+	return &Reader{
+		Reader:       r,
+		ProgressChan: updates,
+		Total:        initialOffset,
 	}
 }
 

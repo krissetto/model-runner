@@ -6,8 +6,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/google/go-containerregistry/pkg/v1"
-	ggcrtypes "github.com/google/go-containerregistry/pkg/v1/types"
+	"github.com/docker/model-runner/pkg/go-containerregistry/pkg/v1"
+	ggcrtypes "github.com/docker/model-runner/pkg/go-containerregistry/pkg/v1/types"
 
 	"github.com/docker/model-runner/pkg/distribution/types"
 )

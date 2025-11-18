@@ -15,7 +15,7 @@ import (
 	"strings"
 
 	"github.com/docker/model-runner/pkg/distribution/types"
-	v1 "github.com/google/go-containerregistry/pkg/v1"
+	v1 "github.com/docker/model-runner/pkg/go-containerregistry/pkg/v1"
 	parser "github.com/gpustack/gguf-parser-go"
 
 	"github.com/docker/model-runner/pkg/diskusage"

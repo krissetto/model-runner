@@ -6,8 +6,9 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"time"
 
-	v1 "github.com/google/go-containerregistry/pkg/v1"
+	v1 "github.com/docker/model-runner/pkg/go-containerregistry/pkg/v1"
 
 	"github.com/docker/model-runner/pkg/distribution/internal/progress"
 )
@@ -79,6 +80,13 @@ func (s *LocalStore) initialize() error {
 		}); err != nil {
 			return fmt.Errorf("initializing index file: %w", err)
 		}
+	}
+
+	// Clean up stale incomplete files (older than 7 days)
+	// This prevents disk space leaks from abandoned downloads
+	if err := s.CleanupStaleIncompleteFiles(7 * 24 * time.Hour); err != nil {
+		// Log the error but don't fail initialization
+		fmt.Printf("Warning: failed to clean up stale incomplete files: %v\n", err)
 	}
 
 	return nil
