@@ -27,15 +27,15 @@ jobs:
   prepare:
     runs-on: ubuntu-24.04
     outputs:
-      targets: ${{ steps.generate.outputs.targets }}
+      matrix: ${{ steps.generate.outputs.matrix }}
     steps:
       -
         name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
       -
-        name: List targets
+        name: Generate matrix
         id: generate
-        uses: docker/bake-action/subaction/list-targets@82490499d2e5613fcead7e128237ef0b0ea210f7
+        uses: docker/bake-action/subaction/matrix@82490499d2e5613fcead7e128237ef0b0ea210f7
         with:
           files: ./cmd/cli/docker-bake.hcl
           target: validate
@@ -47,7 +47,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: ${{ fromJson(needs.prepare.outputs.targets) }}
+        include: ${{ fromJson(needs.prepare.outputs.matrix) }}
     steps:
       -
         name: Checkout
