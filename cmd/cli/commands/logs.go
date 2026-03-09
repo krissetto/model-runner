@@ -78,15 +78,19 @@ func newLogsCmd() *cobra.Command {
 			}
 
 			if noEngines {
-				err = printMergedLog(serviceLogPath, "")
+				err = printMergedLog(cmd.OutOrStdout(), serviceLogPath, "")
 				if err != nil {
 					return err
 				}
 			} else {
-				err = printMergedLog(serviceLogPath, runtimeLogPath)
+				err = printMergedLog(cmd.OutOrStdout(), serviceLogPath, runtimeLogPath)
 				if err != nil {
 					return err
 				}
+			}
+
+			if !follow {
+				return nil
 			}
 
 			ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
@@ -96,7 +100,7 @@ func newLogsCmd() *cobra.Command {
 
 			g.Go(func() error {
 				t, err := tail.TailFile(
-					serviceLogPath, tail.Config{Location: &tail.SeekInfo{Offset: 0, Whence: io.SeekEnd}, Follow: follow, ReOpen: follow},
+					serviceLogPath, tail.Config{Location: &tail.SeekInfo{Offset: 0, Whence: io.SeekEnd}, Follow: true, ReOpen: true},
 				)
 				if err != nil {
 					return err
@@ -107,19 +111,17 @@ func newLogsCmd() *cobra.Command {
 						if !ok {
 							return nil
 						}
-						fmt.Println(line.Text)
+						cmd.Println(line.Text)
 					case <-ctx.Done():
 						return t.Stop()
 					}
 				}
 			})
 
-			if follow && !noEngines {
-				// Show inference engines logs if `follow` is enabled
-				// and the engines logs have not been skipped by setting `--no-engines`.
+			if !noEngines {
 				g.Go(func() error {
 					t, err := tail.TailFile(
-						runtimeLogPath, tail.Config{Location: &tail.SeekInfo{Offset: 0, Whence: io.SeekEnd}, Follow: follow, ReOpen: follow},
+						runtimeLogPath, tail.Config{Location: &tail.SeekInfo{Offset: 0, Whence: io.SeekEnd}, Follow: true, ReOpen: true},
 					)
 					if err != nil {
 						return err
@@ -131,7 +133,7 @@ func newLogsCmd() *cobra.Command {
 							if !ok {
 								return nil
 							}
-							fmt.Println(line.Text)
+							cmd.Println(line.Text)
 						case <-ctx.Done():
 							return t.Stop()
 						}
@@ -152,7 +154,7 @@ var timestampRe = regexp.MustCompile(`\[(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d
 
 const timeFmt = "2006-01-02T15:04:05.000000000Z"
 
-func printTillFirstTimestamp(logScanner *bufio.Scanner) (time.Time, string) {
+func advanceToNextTimestamp(w io.Writer, logScanner *bufio.Scanner) (time.Time, string) {
 	if logScanner == nil {
 		return time.Time{}, ""
 	}
@@ -163,18 +165,18 @@ func printTillFirstTimestamp(logScanner *bufio.Scanner) (time.Time, string) {
 		if len(match) == 2 {
 			timestamp, err := time.Parse(timeFmt, match[1])
 			if err != nil {
-				println(text)
+				fmt.Fprintln(w, text)
 				continue
 			}
 			return timestamp, text
 		} else {
-			println(text)
+			fmt.Fprintln(w, text)
 		}
 	}
 	return time.Time{}, ""
 }
 
-func printMergedLog(logPath1, logPath2 string) error {
+func printMergedLog(w io.Writer, logPath1, logPath2 string) error {
 	var logScanner1 *bufio.Scanner
 	if logPath1 != "" {
 		logFile1, err := os.Open(logPath1)
@@ -195,31 +197,32 @@ func printMergedLog(logPath1, logPath2 string) error {
 
 	var timestamp1 time.Time
 	var timestamp2 time.Time
-	var log1Line string
-	var log2Name string
+	var line1 string
+	var line2 string
 
-	timestamp1, log1Line = printTillFirstTimestamp(logScanner1)
-	timestamp2, log2Name = printTillFirstTimestamp(logScanner2)
+	timestamp1, line1 = advanceToNextTimestamp(w, logScanner1)
+	timestamp2, line2 = advanceToNextTimestamp(w, logScanner2)
 
-	for log1Line != "" && log2Name != "" {
-		for log1Line != "" && timestamp1.Before(timestamp2) {
-			println(log1Line)
-			timestamp1, log1Line = printTillFirstTimestamp(logScanner1)
-		}
-		for log2Name != "" && timestamp2.Before(timestamp1) {
-			println(log2Name)
-			timestamp2, log2Name = printTillFirstTimestamp(logScanner2)
+	for line1 != "" && line2 != "" {
+		if !timestamp2.Before(timestamp1) {
+			fmt.Fprintln(w, line1)
+			timestamp1, line1 = advanceToNextTimestamp(w, logScanner1)
+		} else {
+			fmt.Fprintln(w, line2)
+			timestamp2, line2 = advanceToNextTimestamp(w, logScanner2)
 		}
 	}
 
-	if log1Line != "" {
+	if line1 != "" {
+		fmt.Fprintln(w, line1)
 		for logScanner1.Scan() {
-			println(logScanner1.Text())
+			fmt.Fprintln(w, logScanner1.Text())
 		}
 	}
-	if log2Name != "" {
+	if line2 != "" {
+		fmt.Fprintln(w, line2)
 		for logScanner2.Scan() {
-			println(logScanner2.Text())
+			fmt.Fprintln(w, logScanner2.Text())
 		}
 	}
 
