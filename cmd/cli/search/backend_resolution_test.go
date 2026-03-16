@@ -1,6 +1,8 @@
 package search
 
 import (
+	"context"
+	"fmt"
 	"testing"
 
 	distributionhf "github.com/docker/model-runner/pkg/distribution/huggingface"
@@ -149,5 +151,52 @@ func TestWithDefaultTag(t *testing.T) {
 				t.Fatalf("withDefaultTag(%q) = %q, want %q", tt.reference, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestResolveSearchResultBackendsConcurrent(t *testing.T) {
+	t.Parallel()
+
+	const numResults = 20
+
+	results := make([]SearchResult, numResults)
+	for i := range results {
+		results[i] = SearchResult{
+			Name:   fmt.Sprintf("model-%d", i),
+			Source: "test",
+		}
+	}
+
+	wantBackends := make([]string, numResults)
+	for i := range wantBackends {
+		switch i % 3 {
+		case 0:
+			wantBackends[i] = backendLlamaCpp
+		case 1:
+			wantBackends[i] = backendVLLM
+		case 2:
+			wantBackends[i] = backendDiffusers
+		}
+	}
+
+	resolve := func(_ context.Context, result SearchResult) (string, error) {
+		for i, r := range results {
+			if r.Name == result.Name {
+				return wantBackends[i], nil
+			}
+		}
+		return backendUnknown, nil
+	}
+
+	resolved := resolveSearchResultBackends(t.Context(), results, numResults, resolve)
+
+	if len(resolved) != numResults {
+		t.Fatalf("expected %d results, got %d", numResults, len(resolved))
+	}
+
+	for i, r := range resolved {
+		if r.Backend != wantBackends[i] {
+			t.Errorf("result[%d] (%s): Backend = %q, want %q", i, r.Name, r.Backend, wantBackends[i])
+		}
 	}
 }
