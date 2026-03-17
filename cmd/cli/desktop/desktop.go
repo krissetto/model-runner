@@ -747,6 +747,7 @@ type BackendStatus struct {
 	Mode        string               `json:"mode"`
 	LastUsed    time.Time            `json:"last_used,omitempty"`
 	InUse       bool                 `json:"in_use,omitempty"`
+	Loading     bool                 `json:"loading,omitempty"`
 	KeepAlive   *inference.KeepAlive `json:"keep_alive,omitempty"`
 }
 
