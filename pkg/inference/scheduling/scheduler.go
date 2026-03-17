@@ -180,7 +180,7 @@ func (s *Scheduler) getLoaderStatus(ctx context.Context) []BackendStatus {
 	}
 	defer s.loader.unlock()
 
-	result := make([]BackendStatus, 0, len(s.loader.runners))
+	result := make([]BackendStatus, 0, len(s.loader.runners)+len(s.loader.loading))
 
 	for key, runnerInfo := range s.loader.runners {
 		if s.loader.slots[runnerInfo.slot] != nil {
@@ -203,6 +203,16 @@ func (s *Scheduler) getLoaderStatus(ctx context.Context) []BackendStatus {
 
 			result = append(result, status)
 		}
+	}
+
+	// Include models that are currently being loaded.
+	for _, info := range s.loader.loading {
+		result = append(result, BackendStatus{
+			BackendName: info.backendName,
+			ModelName:   info.modelRef,
+			Mode:        info.mode.String(),
+			Loading:     true,
+		})
 	}
 
 	return result
