@@ -415,13 +415,22 @@ func (l *loader) run(ctx context.Context) {
 // it should be released by the caller using the release mechanism (once the
 // runner is no longer needed).
 func (l *loader) load(ctx context.Context, backendName, modelID, modelRef string, mode inference.BackendMode) (*runner, error) {
-	// Grab the backend.
+	// Grab the backend. The backends map is immutable after construction,
+	// so it is safe to read without holding the lock.
 	backend, ok := l.backends[backendName]
 	if !ok {
 		return nil, ErrBackendNotFound
 	}
 
-	// Get runner configuration if available
+	l.log.Info("Loading backend runner", "backend", backendName, "model", modelID, "mode", mode)
+
+	if !l.lock(ctx) {
+		return nil, context.Canceled
+	}
+	defer l.unlock()
+
+	// Get runner configuration if available (must be done under lock since
+	// runnerConfigs can be modified concurrently by setRunnerConfig).
 	var runnerConfig *inference.BackendConfiguration
 	draftModelID := ""
 	if rc, ok := l.runnerConfigs[makeConfigKey(backendName, modelID, mode)]; ok {
@@ -454,14 +463,6 @@ func (l *loader) load(ctx context.Context, backendName, modelID, modelRef string
 		}
 		runnerConfig = &defaultConfig
 	}
-
-	l.log.Info("Loading backend runner", "backend", backendName, "model", modelID, "mode", mode)
-
-	// Acquire the loader lock and defer its release.
-	if !l.lock(ctx) {
-		return nil, context.Canceled
-	}
-	defer l.unlock()
 
 	// Create a polling channel that we can use to detect state changes and
 	// ensure that it's deregistered by the time we return.
