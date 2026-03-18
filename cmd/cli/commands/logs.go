@@ -7,10 +7,12 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/docker/model-runner/cmd/cli/commands/completion"
@@ -70,9 +72,22 @@ func newLogsCmd() *cobra.Command {
 			case "darwin":
 				serviceLogPath = filepath.Join(homeDir, "Library/Containers/com.docker.docker/Data/log/host/inference.log")
 				runtimeLogPath = filepath.Join(homeDir, "Library/Containers/com.docker.docker/Data/log/host/inference-llama.cpp-server.log")
-			case "windows":
-				serviceLogPath = filepath.Join(homeDir, "AppData/Local/Docker/log/host/inference.log")
-				runtimeLogPath = filepath.Join(homeDir, "AppData/Local/Docker/log/host/inference-llama.cpp-server.log")
+			case "windows", "linux":
+				baseDir := homeDir
+				if runtime.GOOS == "linux" {
+					if !isWSL() {
+						return fmt.Errorf("log viewing on native Linux is only supported in standalone mode")
+					}
+					// When running inside WSL2 with Docker Desktop, the log files
+					// are on the Windows host filesystem mounted under /mnt/.
+					winHomeDir, wslErr := windowsHomeDirFromWSL(cmd.Context())
+					if wslErr != nil {
+						return fmt.Errorf("unable to determine Windows home directory from WSL2: %w", wslErr)
+					}
+					baseDir = winHomeDir
+				}
+				serviceLogPath = filepath.Join(baseDir, "AppData/Local/Docker/log/host/inference.log")
+				runtimeLogPath = filepath.Join(baseDir, "AppData/Local/Docker/log/host/inference-llama.cpp-server.log")
 			default:
 				return fmt.Errorf("unsupported OS: %s", runtime.GOOS)
 			}
@@ -98,9 +113,13 @@ func newLogsCmd() *cobra.Command {
 
 			g, ctx := errgroup.WithContext(ctx)
 
+			// Poll mode is needed when tailing files over a mounted filesystem
+			// (Windows or WSL2 accessing the Windows host via /mnt/).
+			pollMode := runtime.GOOS == "windows" || (runtime.GOOS == "linux" && isWSL())
+
 			g.Go(func() error {
 				t, err := tail.TailFile(
-					serviceLogPath, tail.Config{Location: &tail.SeekInfo{Offset: 0, Whence: io.SeekEnd}, Follow: true, ReOpen: true},
+					serviceLogPath, tail.Config{Location: &tail.SeekInfo{Offset: 0, Whence: io.SeekEnd}, Follow: true, ReOpen: true, Poll: pollMode},
 				)
 				if err != nil {
 					return err
@@ -121,7 +140,7 @@ func newLogsCmd() *cobra.Command {
 			if !noEngines {
 				g.Go(func() error {
 					t, err := tail.TailFile(
-						runtimeLogPath, tail.Config{Location: &tail.SeekInfo{Offset: 0, Whence: io.SeekEnd}, Follow: true, ReOpen: true},
+						runtimeLogPath, tail.Config{Location: &tail.SeekInfo{Offset: 0, Whence: io.SeekEnd}, Follow: true, ReOpen: true, Poll: pollMode},
 					)
 					if err != nil {
 						return err
@@ -148,6 +167,35 @@ func newLogsCmd() *cobra.Command {
 	c.Flags().BoolVarP(&follow, "follow", "f", false, "View logs with real-time streaming")
 	c.Flags().BoolVar(&noEngines, "no-engines", false, "Exclude inference engine logs from the output")
 	return c
+}
+
+// isWSL reports whether the current process is running inside a WSL2 environment.
+func isWSL() bool {
+	_, ok := os.LookupEnv("WSL_DISTRO_NAME")
+	return ok
+}
+
+// windowsHomeDirFromWSL resolves the Windows user's home directory from
+// within a WSL2 environment by running "wslpath" on the USERPROFILE path
+// obtained via "wslvar". This returns a Linux path like /mnt/c/Users/Name.
+func windowsHomeDirFromWSL(ctx context.Context) (string, error) {
+	out, err := exec.CommandContext(ctx, "wslvar", "USERPROFILE").Output()
+	if err != nil {
+		return "", fmt.Errorf("wslvar USERPROFILE: %w", err)
+	}
+	winPath := strings.TrimSpace(string(out))
+	if winPath == "" {
+		return "", fmt.Errorf("USERPROFILE is empty")
+	}
+	out, err = exec.CommandContext(ctx, "wslpath", "-u", winPath).Output()
+	if err != nil {
+		return "", fmt.Errorf("wslpath -u %q: %w", winPath, err)
+	}
+	linuxPath := strings.TrimSpace(string(out))
+	if linuxPath == "" {
+		return "", fmt.Errorf("wslpath returned empty path")
+	}
+	return linuxPath, nil
 }
 
 var timestampRe = regexp.MustCompile(`\[(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z)\].*`)
