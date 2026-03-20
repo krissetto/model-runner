@@ -283,6 +283,25 @@ func (l *loader) evictRunner(backend, model string, mode inference.BackendMode) 
 	return len(l.runners)
 }
 
+// UnloadBackend unloads all runners for a specific backend.
+// It returns the number of unloaded runners.
+func (l *loader) UnloadBackend(ctx context.Context, backend string) int {
+	if !l.lock(ctx) {
+		return 0
+	}
+	defer l.unlock()
+
+	count := 0
+	for r, runnerInfo := range l.runners {
+		if r.backend == backend && l.references[runnerInfo.slot] == 0 {
+			l.log.Info("Evicting backend runner for uninstall", "backend", r.backend, "model", r.modelID, "modelRef", runnerInfo.modelRef, "mode", r.mode)
+			l.freeRunnerSlot(runnerInfo.slot, r)
+			count++
+		}
+	}
+	return count
+}
+
 // Unload unloads runners and returns the number of unloaded runners.
 func (l *loader) Unload(ctx context.Context, unload UnloadRequest) int {
 	if !l.lock(ctx) {

@@ -264,6 +264,16 @@ func (d *diffusers) Run(ctx context.Context, socket, model string, modelRef stri
 }
 
 // Status implements inference.Backend.Status.
+// Uninstall implements inference.Backend.Uninstall.
+func (d *diffusers) Uninstall() error {
+	if err := os.RemoveAll(d.installDir); err != nil {
+		return fmt.Errorf("failed to remove diffusers install directory: %w", err)
+	}
+	d.pythonPath = ""
+	d.status = inference.FormatNotInstalled("")
+	return nil
+}
+
 func (d *diffusers) Status() string {
 	return d.status
 }

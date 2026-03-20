@@ -895,6 +895,30 @@ func (c *Client) InstallBackend(backend string) error {
 	return nil
 }
 
+// UninstallBackend removes a backend's local installation via the model runner API.
+func (c *Client) UninstallBackend(backend string) error {
+	uninstallPath := inference.InferencePrefix + "/uninstall-backend"
+	jsonData, err := json.Marshal(struct {
+		Backend string `json:"backend"`
+	}{Backend: backend})
+	if err != nil {
+		return fmt.Errorf("error marshaling request: %w", err)
+	}
+
+	resp, err := c.doRequest(http.MethodPost, uninstallPath, bytes.NewReader(jsonData))
+	if err != nil {
+		return c.handleQueryError(err, uninstallPath)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("uninstall backend failed with status %s: %s", resp.Status, string(body))
+	}
+
+	return nil
+}
+
 func (c *Client) ConfigureBackend(request scheduling.ConfigureRequest) error {
 	configureBackendPath := inference.InferencePrefix + "/_configure"
 	jsonData, err := json.Marshal(request)
