@@ -178,7 +178,7 @@ docker-run-impl:
 
 # vllm-metal (macOS ARM64 only)
 # The tarball is self-contained: includes a standalone Python 3.12 + all packages.
-VLLM_METAL_RELEASE ?= v0.1.0-20260126-121650
+VLLM_METAL_RELEASE ?= v0.1.0-20260320-122309
 VLLM_METAL_INSTALL_DIR := $(HOME)/.docker/model-runner/vllm-metal
 VLLM_METAL_TARBALL := vllm-metal-macos-arm64-$(VLLM_METAL_RELEASE).tar.gz
 
@@ -231,14 +231,15 @@ vllm-metal-dev:
 	rm -rf "$(VLLM_METAL_INSTALL_DIR)"; \
 	$$PYTHON_BIN -m venv "$(VLLM_METAL_INSTALL_DIR)"; \
 	. "$(VLLM_METAL_INSTALL_DIR)/bin/activate" && \
-		VLLM_UPSTREAM_VERSION="0.13.0" && \
+		VLLM_UPSTREAM_VERSION="0.17.1" && \
 		WORK_DIR=$$(mktemp -d) && \
 		curl -fsSL -o "$$WORK_DIR/vllm.tar.gz" "https://github.com/vllm-project/vllm/releases/download/v$$VLLM_UPSTREAM_VERSION/vllm-$$VLLM_UPSTREAM_VERSION.tar.gz" && \
 		tar -xzf "$$WORK_DIR/vllm.tar.gz" -C "$$WORK_DIR" && \
 		pip install -r "$$WORK_DIR/vllm-$$VLLM_UPSTREAM_VERSION/requirements/cpu.txt" && \
-		pip install -e "$(VLLM_METAL_PATH)" && \
+		pip install "$$WORK_DIR/vllm-$$VLLM_UPSTREAM_VERSION" && \
 		pip install -r "$$WORK_DIR/vllm-$$VLLM_UPSTREAM_VERSION/requirements/common.txt" && \
 		rm -rf "$$WORK_DIR" && \
+		pip install -e "$(VLLM_METAL_PATH)" && \
 		echo "dev" > "$(VLLM_METAL_INSTALL_DIR)/.vllm-metal-version"; \
 	echo "vllm-metal dev installed from $(VLLM_METAL_PATH)"
 
