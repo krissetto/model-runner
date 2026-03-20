@@ -168,6 +168,13 @@ func (s *Scheduler) InstallBackend(ctx context.Context, name string) error {
 	return s.installer.installBackend(ctx, name)
 }
 
+// UninstallBackend unloads all runners for the backend and then removes its
+// local installation.
+func (s *Scheduler) UninstallBackend(ctx context.Context, name string) error {
+	s.loader.UnloadBackend(ctx, name)
+	return s.installer.uninstallBackend(ctx, name)
+}
+
 // GetRunningBackendsInfo returns information about all running backends as a slice
 func (s *Scheduler) GetRunningBackendsInfo(ctx context.Context) []BackendStatus {
 	return s.getLoaderStatus(ctx)

@@ -277,6 +277,16 @@ func (v *vllmMetal) buildArgs(bundle interface{ SafetensorsPath() string }, sock
 	return args, nil
 }
 
+// Uninstall implements inference.Backend.Uninstall.
+func (v *vllmMetal) Uninstall() error {
+	if err := os.RemoveAll(v.installDir); err != nil {
+		return fmt.Errorf("failed to remove vllm-metal install directory: %w", err)
+	}
+	v.pythonPath = ""
+	v.status = inference.FormatNotInstalled("")
+	return nil
+}
+
 // Status implements inference.Backend.Status.
 func (v *vllmMetal) Status() string {
 	return v.status
