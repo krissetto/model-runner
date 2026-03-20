@@ -10,6 +10,7 @@ import (
 
 	mockdesktop "github.com/docker/model-runner/cmd/cli/mocks"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 )
 
@@ -152,6 +153,143 @@ func TestPushRetryOnNetworkError(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+// mockTool is a minimal ClientTool for testing.
+type mockTool struct{ name string }
+
+func (m *mockTool) Name() string { return m.name }
+func (m *mockTool) Schema() Tool {
+	return Tool{Type: "function", Function: ToolFunction{Name: m.name}}
+}
+func (m *mockTool) Execute(_ context.Context, _ map[string]any) (string, error) {
+	return "result", nil
+}
+
+// jinjaErrorBody is the 500 response body that a model with an incompatible chat
+// template returns when tools are included in the request.
+const jinjaErrorBody = `{"error":{"code":500,"message":"Jinja Exception: Conversation roles must alternate user/assistant/user/assistant/...","type":"server_error"}}`
+
+// sseResponse builds a minimal SSE response body with a single content chunk.
+func sseResponse(content string) string {
+	return "data: {\"choices\":[{\"delta\":{\"content\":\"" + content + "\"},\"finish_reason\":null,\"index\":0}]}\n\n" +
+		"data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\",\"index\":0}]}\n\n" +
+		"data: [DONE]\n\n"
+}
+
+// TestChatWithMessagesContext_JinjaFallbackNoTools verifies that when a model returns a
+// 500 Jinja template error (because it doesn't support tool calling), the client
+// retries the request without tools and succeeds.
+func TestChatWithMessagesContext_JinjaFallbackNoTools(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockClient := mockdesktop.NewMockDockerHttpClient(ctrl)
+	client := New(NewContextForMock(mockClient))
+
+	gomock.InOrder(
+		// First call includes tools → model returns Jinja error
+		mockClient.EXPECT().Do(gomock.Any()).Return(&http.Response{
+			StatusCode: http.StatusInternalServerError,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(bytes.NewBufferString(jinjaErrorBody)),
+		}, nil),
+		// Retry without tools → model responds successfully
+		mockClient.EXPECT().Do(gomock.Any()).Return(&http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+			Body:       io.NopCloser(bytes.NewBufferString(sseResponse("Hello!"))),
+		}, nil),
+	)
+
+	var output string
+	resp, err := client.ChatWithMessagesContext(
+		t.Context(), "gemma3", nil, "hi", nil,
+		func(s string) { output += s },
+		false,
+		&mockTool{name: "web_search"},
+	)
+	require.NoError(t, err)
+	assert.Equal(t, "Hello!", resp)
+	assert.Equal(t, "Hello!", output)
+}
+
+// toolCallSSEResponse returns an SSE stream that emits a tool_call finish and then
+// a single tool call for the given tool name with empty arguments.
+func toolCallSSEResponse(toolName string) string {
+	return `data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call1","type":"function","function":{"name":"` + toolName + `","arguments":"{}"}}]},"finish_reason":null,"index":0}]}` + "\n\n" +
+		`data: {"choices":[{"delta":{},"finish_reason":"tool_calls","index":0}]}` + "\n\n" +
+		"data: [DONE]\n\n"
+}
+
+// TestChatWithMessagesContext_JinjaFallbackAfterToolCall verifies that when a model
+// successfully executes a tool call but then fails with a Jinja error when the tool
+// result is sent back (because it doesn't support the "tool" role), the client resets
+// to the original messages and retries without tools.
+func TestChatWithMessagesContext_JinjaFallbackAfterToolCall(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockClient := mockdesktop.NewMockDockerHttpClient(ctrl)
+	client := New(NewContextForMock(mockClient))
+
+	gomock.InOrder(
+		// First call with tools → model responds with a tool_call
+		mockClient.EXPECT().Do(gomock.Any()).Return(&http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+			Body:       io.NopCloser(bytes.NewBufferString(toolCallSSEResponse("web_search"))),
+		}, nil),
+		// Second call with tool results → model returns Jinja error (can't handle "tool" role)
+		mockClient.EXPECT().Do(gomock.Any()).Return(&http.Response{
+			StatusCode: http.StatusInternalServerError,
+			Header:     http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(bytes.NewBufferString(jinjaErrorBody)),
+		}, nil),
+		// Third call: reset to original messages, no tools → model responds successfully
+		mockClient.EXPECT().Do(gomock.Any()).Return(&http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+			Body:       io.NopCloser(bytes.NewBufferString(sseResponse("Here is the news."))),
+		}, nil),
+	)
+
+	var output string
+	resp, err := client.ChatWithMessagesContext(
+		t.Context(), "gemma3", nil, "Tell me the news", nil,
+		func(s string) { output += s },
+		false,
+		&mockTool{name: "web_search"},
+	)
+	require.NoError(t, err)
+	assert.Equal(t, "Here is the news.", resp)
+	assert.Equal(t, "Here is the news.", output)
+}
+
+// TestChatWithMessagesContext_Non500ErrorNotRetried verifies that non-Jinja 500 errors
+// are not silently retried without tools.
+func TestChatWithMessagesContext_Non500ErrorNotRetried(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockClient := mockdesktop.NewMockDockerHttpClient(ctrl)
+	client := New(NewContextForMock(mockClient))
+
+	// Only one call should be made — no retry for unrelated errors.
+	mockClient.EXPECT().Do(gomock.Any()).Return(&http.Response{
+		StatusCode: http.StatusInternalServerError,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(bytes.NewBufferString(`{"error":"out of memory"}`)),
+	}, nil).Times(1)
+
+	_, err := client.ChatWithMessagesContext(
+		t.Context(), "gemma3", nil, "hi", nil,
+		func(string) {},
+		false,
+		&mockTool{name: "web_search"},
+	)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "out of memory")
+}
+
 func TestIsRetryableError(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -176,6 +314,29 @@ func TestIsRetryableError(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := isRetryableError(tt.err)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestIsTemplateIncompatibleError(t *testing.T) {
+	tests := []struct {
+		name     string
+		body     string
+		expected bool
+	}{
+		{"empty body", "", false},
+		{"jinja error", `{"error":"Jinja template error: unsupported role"}`, true},
+		{"template error", `{"error":"template does not support tools"}`, true},
+		{"generic error", `{"error":"out of memory"}`, false},
+		{"jinja in message", "model failed: Jinja exception in chat template", true},
+		{"Template capitalized", `{"error":"Template rendering failed"}`, true},
+		{"JINJA uppercase", `{"error":"JINJA EXCEPTION"}`, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := isTemplateIncompatibleError([]byte(tt.body))
 			assert.Equal(t, tt.expected, result)
 		})
 	}
