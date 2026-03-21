@@ -22,26 +22,27 @@ DOCKER_BUILD_ARGS := \
 	--target $(DOCKER_TARGET) \
 	-t $(DOCKER_IMAGE)
 
-# Test configuration
-BUILD_DMR ?= 1
-
 # Phony targets grouped by category
-.PHONY: build run clean test integration-tests build-cli install-cli
+.PHONY: build build-cli build-dmr install-cli run clean test integration-tests
 .PHONY: validate validate-all lint help
 .PHONY: docker-build docker-build-multiplatform docker-run docker-run-impl
 .PHONY: docker-build-vllm docker-run-vllm docker-build-sglang docker-run-sglang
 .PHONY: test-docker-ce-installation
 .PHONY: vllm-metal-build vllm-metal-install vllm-metal-dev vllm-metal-clean
 .PHONY: diffusers-build diffusers-install diffusers-dev diffusers-clean
-# Default target
+# Default target: build server, CLI plugin, and dmr convenience wrapper
 .DEFAULT_GOAL := build
 
-# Build the Go application
-build:
+build: build-server build-cli build-dmr
+
+build-server:
 	CGO_ENABLED=1 go build -ldflags="-s -w -X main.Version=$(shell git describe --tags --always --dirty --match 'v*')" -o $(APP_NAME) .
 
 build-cli:
 	$(MAKE) -C cmd/cli
+
+build-dmr:
+	go build -ldflags="-s -w" -o dmr ./cmd/dmr
 
 install-cli:
 	$(MAKE) -C cmd/cli install
@@ -61,6 +62,7 @@ run: build
 # Clean build artifacts
 clean:
 	rm -f $(APP_NAME)
+	rm -f dmr
 	rm -f model-runner.sock
 
 # Run tests
@@ -77,7 +79,7 @@ integration-tests:
 		echo "$$INVALID_TESTS" | sed 's/func \([^(]*\).*/\1/'; \
 		exit 1; \
 	fi
-	@BUILD_DMR=$(BUILD_DMR) go test -v -race -count=1 -tags=integration -run "^TestIntegration" -timeout=5m ./cmd/cli/commands
+	go test -v -race -count=1 -tags=integration -run "^TestIntegration" -timeout=5m ./cmd/cli/commands
 	@echo "Integration tests completed!"
 
 test-docker-ce-installation:
@@ -308,7 +310,8 @@ diffusers-clean:
 
 help:
 	@echo "Available targets:"
-	@echo "  build				- Build the Go application"
+	@echo "  build				- Build server, CLI plugin, and dmr wrapper (default)"
+	@echo "  build-server			- Build the model-runner server"
 	@echo "  build-cli			- Build the CLI (docker-model plugin)"
 	@echo "  install-cli			- Build and install the CLI as a Docker plugin"
 	@echo "  docs				- Generate CLI documentation"
