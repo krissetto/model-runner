@@ -23,7 +23,7 @@ DOCKER_BUILD_ARGS := \
 	-t $(DOCKER_IMAGE)
 
 # Phony targets grouped by category
-.PHONY: build build-cli build-dmr install-cli run clean test integration-tests
+.PHONY: build build-cli build-dmr build-llamacpp install-cli run clean test integration-tests e2e
 .PHONY: validate validate-all lint help
 .PHONY: docker-build docker-build-multiplatform docker-run docker-run-impl
 .PHONY: docker-build-vllm docker-run-vllm docker-build-sglang docker-run-sglang
@@ -43,6 +43,10 @@ build-cli:
 
 build-dmr:
 	go build -ldflags="-s -w" -o dmr ./cmd/dmr
+
+build-llamacpp:
+	git submodule update --init llamacpp/native
+	$(MAKE) -C llamacpp build
 
 install-cli:
 	$(MAKE) -C cmd/cli install
@@ -81,6 +85,18 @@ integration-tests:
 	fi
 	go test -v -race -count=1 -tags=integration -run "^TestIntegration" -timeout=5m ./cmd/cli/commands
 	@echo "Integration tests completed!"
+
+e2e: build-llamacpp build
+	@echo "Running e2e tests..."
+	@echo "Checking test naming conventions..."
+	@INVALID_TESTS=$$(grep "^func Test" e2e/*_test.go | grep -v "^.*:func TestE2E" | grep -v "^.*:func TestMain"); \
+	if [ -n "$$INVALID_TESTS" ]; then \
+		echo "Error: Found test functions that don't start with 'TestE2E':"; \
+		echo "$$INVALID_TESTS" | sed 's/.*func \([^(]*\).*/\1/'; \
+		exit 1; \
+	fi
+	go test -v -count=1 -tags=e2e -run "^TestE2E" -timeout=15m ./e2e/
+	@echo "E2E tests completed!"
 
 test-docker-ce-installation:
 	@echo "Testing Docker CE installation..."
@@ -319,6 +335,8 @@ help:
 	@echo "  clean				- Clean build artifacts"
 	@echo "  test				- Run tests"
 	@echo "  integration-tests		- Run integration tests (requires Docker)"
+	@echo "  build-llamacpp		- Init submodule and build llama.cpp from source"
+	@echo "  e2e				- Run e2e tests (builds llamacpp + server, macOS)"
 	@echo "  test-docker-ce-installation	- Test Docker CE installation with CLI plugin"
 	@echo "  validate			- Run shellcheck validation"
 	@echo "  validate-all			- Run all CI validations locally (lint, test, shellcheck, go mod tidy)"
