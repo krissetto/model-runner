@@ -93,15 +93,9 @@ func TestExchangeSSRF_RequestSentToRealmURL(t *testing.T) {
 	t.Logf("SSRF confirmed: Exchange() sent %d request(s) to the internal service at %s", hitCount.Load(), internalService.URL)
 }
 
-// TestExchangeSSRF_SensitiveBodyReflectedInError verifies that when the SSRF
-// target returns a non-200 response, the full response body is included
-// verbatim in the error returned to the caller.
-//
-// Attack scenario: a service on the host's localhost (e.g. a local secrets
-// manager, admin API, or metadata endpoint) returns sensitive data.  A
-// container can retrieve that data by triggering a model pull from a malicious
-// registry that redirects the token exchange to the internal URL.
-func TestExchangeSSRF_SensitiveBodyReflectedInError(t *testing.T) {
+// TestExchangeSSRF_SensitiveBodyNotReflectedInError verifies that Exchange()
+// does NOT include the response body in the error it returns to the caller.
+func TestExchangeSSRF_SensitiveBodyNotReflectedInError(t *testing.T) {
 	sensitiveData := map[string]string{
 		"db_password":      "s3cret_example",
 		"internal_api_key": "sk-example-key",
@@ -112,8 +106,8 @@ func TestExchangeSSRF_SensitiveBodyReflectedInError(t *testing.T) {
 	// "Internal service" returns a non-200 response containing sensitive data.
 	internalService := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusUnauthorized) // triggers the body-reflection path
-		w.Write(sensitiveJSON)                 //nolint:errcheck
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write(sensitiveJSON) //nolint:errcheck
 	}))
 	defer internalService.Close()
 
@@ -121,32 +115,24 @@ func TestExchangeSSRF_SensitiveBodyReflectedInError(t *testing.T) {
 
 	_, err := remote.Exchange(context.Background(), emptyRegistry, nil, nil, []string{"repository:x:pull"}, pr)
 	if err == nil {
-		t.Fatal("expected an error from Exchange(), got nil")
+		t.Fatal("expected an error from Exchange() when token endpoint returns 401, got nil")
 	}
 
 	errMsg := err.Error()
 
-	// The sensitive body MUST appear in the error for the vulnerability to
-	// be confirmed.  After remediation, Exchange() should return a generic
-	// "authentication failed" error and must NOT include the response body.
+	// The error must contain the HTTP status code so callers can diagnose
+	// legitimate authentication failures.
+	if !strings.Contains(errMsg, "401") {
+		t.Errorf("error should mention the HTTP status code 401, got: %q", errMsg)
+	}
+
+	// The error must NOT contain any of the sensitive values from the response
+	// body — this would be the SSRF body-reflection vulnerability.
 	for _, sensitive := range []string{"s3cret_example", "sk-example-key", "THIS_DATA_READ_VIA_SSRF"} {
-		if !strings.Contains(errMsg, sensitive) {
-			t.Logf("sensitive value %q not found in error — body reflection may be fixed", sensitive)
-		} else {
-			t.Logf("BODY REFLECTION confirmed: error contains sensitive value %q", sensitive)
+		if strings.Contains(errMsg, sensitive) {
+			t.Errorf("BODY REFLECTION vulnerability: error contains sensitive value %q — the response body must not be included in errors returned to the caller (log at debug level instead)", sensitive)
 		}
 	}
-
-	// The vulnerability is present when ANY of the sensitive values leaks.
-	leaked := strings.Contains(errMsg, "s3cret_example") ||
-		strings.Contains(errMsg, "sk-example-key") ||
-		strings.Contains(errMsg, "THIS_DATA_READ_VIA_SSRF")
-
-	if !leaked {
-		t.Skip("body reflection not observed — check whether the fix has already been applied")
-	}
-
-	t.Logf("Full error returned to caller: %s", errMsg)
 }
 
 // TestExchangeSSRF_TokenExfiltrationViaCaseInsensitiveJSON verifies the more

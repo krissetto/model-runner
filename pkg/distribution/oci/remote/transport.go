@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -150,7 +151,11 @@ func Exchange(ctx context.Context, reg reference.Registry, auth authn.Authentica
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("token request failed with status %d: %s", resp.StatusCode, string(body))
+		slog.DebugContext(ctx, "token request failed",
+			"status", resp.StatusCode,
+			"body", string(body),
+		)
+		return nil, fmt.Errorf("token request failed: unexpected status %d from token endpoint", resp.StatusCode)
 	}
 
 	var token Token
