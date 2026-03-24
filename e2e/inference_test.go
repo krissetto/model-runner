@@ -3,233 +3,169 @@
 package e2e
 
 import (
-	"bufio"
-	"bytes"
 	"encoding/json"
-	"fmt"
-	"io"
 	"net/http"
 	"strings"
 	"testing"
-
-	"github.com/docker/model-runner/cmd/cli/desktop"
 )
 
-// TestE2E_Inference runs all inference API tests sequentially as subtests
-// to ensure correct ordering (pull → list → chat → streaming → remove).
+type backendTestCase struct {
+	name  string
+	model string
+}
+
+var backends = []backendTestCase{
+	{"llama.cpp", ggufModel},
+	{"vllm-metal", mlxModel},
+}
+
 func TestE2E_Inference(t *testing.T) {
-	t.Run("PullModel", func(t *testing.T) {
-		t.Logf("pulling model %s via API...", testModel)
+	for _, bc := range backends {
+		bc := bc
+		t.Run(bc.name, func(t *testing.T) {
+			t.Run("Pull", func(t *testing.T) {
+				pullModel(t, bc.model)
+				t.Logf("pulled %s", bc.model)
+			})
 
-		req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, serverURL+"/models/create", strings.NewReader(`{"from":"`+testModel+`"}`))
-		if err != nil {
-			t.Fatalf("creating request: %v", err)
-		}
-		req.Header.Set("Content-Type", "application/json")
-
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			t.Fatalf("pull request failed: %v", err)
-		}
-		defer resp.Body.Close()
-
-		body, _ := io.ReadAll(resp.Body)
-		if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-			t.Fatalf("pull failed: status=%d body=%s", resp.StatusCode, body)
-		}
-		t.Logf("pull completed (status %d)", resp.StatusCode)
-	})
-
-	t.Run("ListModels", func(t *testing.T) {
-		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, serverURL+"/engines/v1/models", nil)
-		if err != nil {
-			t.Fatalf("creating request: %v", err)
-		}
-
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			t.Fatalf("list models failed: %v", err)
-		}
-		defer resp.Body.Close()
-
-		if resp.StatusCode != http.StatusOK {
-			body, _ := io.ReadAll(resp.Body)
-			t.Fatalf("list models: status=%d body=%s", resp.StatusCode, body)
-		}
-
-		var result struct {
-			Data []struct {
-				ID string `json:"id"`
-			} `json:"data"`
-		}
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			t.Fatalf("decoding list response: %v", err)
-		}
-
-		found := false
-		for _, m := range result.Data {
-			t.Logf("  model: %s", m.ID)
-			if strings.Contains(m.ID, "smollm2") {
-				found = true
-			}
-		}
-		if !found {
-			t.Fatalf("expected %s in model list", testModel)
-		}
-	})
-
-	t.Run("ChatCompletionNonStreaming", func(t *testing.T) {
-		reqBody := desktop.OpenAIChatRequest{
-			Model: testModel,
-			Messages: []desktop.OpenAIChatMessage{
-				{Role: "user", Content: "Say hello in exactly one word."},
-			},
-			Stream: false,
-		}
-
-		body, err := json.Marshal(reqBody)
-		if err != nil {
-			t.Fatalf("marshal: %v", err)
-		}
-
-		req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, serverURL+"/engines/v1/chat/completions", bytes.NewReader(body))
-		if err != nil {
-			t.Fatalf("creating request: %v", err)
-		}
-		req.Header.Set("Content-Type", "application/json")
-
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			t.Fatalf("request failed: %v", err)
-		}
-		defer resp.Body.Close()
-
-		respBody, _ := io.ReadAll(resp.Body)
-		if resp.StatusCode != http.StatusOK {
-			t.Fatalf("chat completion failed: status=%d body=%s", resp.StatusCode, respBody)
-		}
-
-		var chatResp desktop.OpenAIChatResponse
-		if err := json.Unmarshal(respBody, &chatResp); err != nil {
-			t.Fatalf("decoding response: %v (body=%s)", err, respBody)
-		}
-
-		if len(chatResp.Choices) == 0 {
-			t.Fatal("no choices in response")
-		}
-
-		content := chatResp.Choices[0].Message.Content
-		t.Logf("model response: %q", content)
-
-		if content == "" {
-			t.Fatal("empty response content")
-		}
-		if chatResp.Choices[0].Message.Role != "assistant" {
-			t.Errorf("expected role=assistant, got %q", chatResp.Choices[0].Message.Role)
-		}
-	})
-
-	t.Run("ChatCompletionStreaming", func(t *testing.T) {
-		reqBody := desktop.OpenAIChatRequest{
-			Model: testModel,
-			Messages: []desktop.OpenAIChatMessage{
-				{Role: "user", Content: "Count from 1 to 3."},
-			},
-			Stream: true,
-		}
-
-		body, err := json.Marshal(reqBody)
-		if err != nil {
-			t.Fatalf("marshal: %v", err)
-		}
-
-		req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, serverURL+"/engines/v1/chat/completions", bytes.NewReader(body))
-		if err != nil {
-			t.Fatalf("creating request: %v", err)
-		}
-		req.Header.Set("Content-Type", "application/json")
-
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			t.Fatalf("request failed: %v", err)
-		}
-		defer resp.Body.Close()
-
-		if resp.StatusCode != http.StatusOK {
-			respBody, _ := io.ReadAll(resp.Body)
-			t.Fatalf("streaming request failed: status=%d body=%s", resp.StatusCode, respBody)
-		}
-
-		var accumulated strings.Builder
-		var chunkCount int
-		gotDone := false
-
-		scanner := bufio.NewScanner(resp.Body)
-		for scanner.Scan() {
-			line := scanner.Text()
-
-			if line == "" {
-				continue
-			}
-
-			if !strings.HasPrefix(line, "data: ") {
-				if strings.HasPrefix(line, ":") {
-					continue
+			t.Run("ListModels", func(t *testing.T) {
+				status, body := doJSON(t, http.MethodGet, serverURL+"/engines/v1/models", nil)
+				if status != http.StatusOK {
+					t.Fatalf("list: status=%d body=%s", status, body)
 				}
-				t.Fatalf("unexpected SSE line: %q", line)
-			}
+				var result struct {
+					Data []struct {
+						ID string `json:"id"`
+					} `json:"data"`
+				}
+				if err := json.Unmarshal(body, &result); err != nil {
+					t.Fatalf("decode: %v", err)
+				}
+				found := false
+				for _, m := range result.Data {
+					if strings.Contains(m.ID, "smollm2") {
+						found = true
+					}
+				}
+				if !found {
+					t.Fatalf("model %s not in list", bc.model)
+				}
+			})
 
-			data := strings.TrimPrefix(line, "data: ")
+			t.Run("ChatCompletion", func(t *testing.T) {
+				resp := chatCompletion(t, bc.model, "Say hello in one word.")
+				if len(resp.Choices) == 0 {
+					t.Fatal("no choices")
+				}
+				t.Logf("response: %q", resp.Choices[0].Message.Content)
+				if resp.Choices[0].Message.Content == "" {
+					t.Fatal("empty content")
+				}
+				if resp.Choices[0].Message.Role != "assistant" {
+					t.Errorf("expected role=assistant, got %q", resp.Choices[0].Message.Role)
+				}
+			})
 
-			if data == "[DONE]" {
-				gotDone = true
-				break
-			}
+			t.Run("ChatCompletionStreaming", func(t *testing.T) {
+				content := streamingChatCompletion(t, bc.model, "Count from 1 to 3.")
+				t.Logf("streamed: %q", content)
+			})
 
-			var chunk desktop.OpenAIChatResponse
-			if err := json.Unmarshal([]byte(data), &chunk); err != nil {
-				t.Fatalf("parsing SSE chunk: %v (data=%q)", err, data)
-			}
+			t.Run("ResponsesAPI", func(t *testing.T) {
+				status, body := doJSON(t, http.MethodPost, serverURL+"/responses",
+					map[string]any{
+						"model": bc.model,
+						"input": "Say hi in one word.",
+					})
+				if status != http.StatusOK {
+					t.Fatalf("responses API: status=%d body=%s", status, body)
+				}
+				var resp struct {
+					ID         string `json:"id"`
+					Status     string `json:"status"`
+					OutputText string `json:"output_text"`
+				}
+				if err := json.Unmarshal(body, &resp); err != nil {
+					t.Fatalf("decode: %v (body=%s)", err, body)
+				}
+				if resp.Status != "completed" {
+					t.Errorf("expected status=completed, got %q", resp.Status)
+				}
+				if resp.OutputText == "" {
+					t.Fatal("empty output_text")
+				}
+				t.Logf("responses API: %q", resp.OutputText)
+			})
 
-			chunkCount++
-			if len(chunk.Choices) > 0 {
-				accumulated.WriteString(chunk.Choices[0].Delta.Content)
-			}
-		}
+			t.Run("AnthropicMessages", func(t *testing.T) {
+				status, body := doJSON(t, http.MethodPost, serverURL+"/anthropic/v1/messages",
+					map[string]any{
+						"model":      bc.model,
+						"max_tokens": 32,
+						"messages":   []map[string]string{{"role": "user", "content": "Say hi."}},
+					})
+				if status != http.StatusOK {
+					t.Fatalf("anthropic messages: status=%d body=%s", status, body)
+				}
+				var resp struct {
+					Content []struct {
+						Text string `json:"text"`
+					} `json:"content"`
+				}
+				if err := json.Unmarshal(body, &resp); err != nil {
+					t.Fatalf("decode: %v (body=%s)", err, body)
+				}
+				if len(resp.Content) == 0 || resp.Content[0].Text == "" {
+					t.Fatal("empty anthropic response")
+				}
+				t.Logf("anthropic: %q", resp.Content[0].Text)
+			})
 
-		if err := scanner.Err(); err != nil {
-			t.Fatalf("reading stream: %v", err)
-		}
+			t.Run("OllamaChat", func(t *testing.T) {
+				resp := ollamaChat(t, bc.model, "Say hi.")
+				if resp.Message.Content == "" {
+					t.Fatal("empty ollama chat response")
+				}
+				if !resp.Done {
+					t.Error("ollama chat response not done")
+				}
+				t.Logf("ollama chat: %q", resp.Message.Content)
+			})
 
-		t.Logf("received %d chunks, accumulated: %q", chunkCount, accumulated.String())
+			t.Run("OllamaGenerate", func(t *testing.T) {
+				resp := ollamaGenerate(t, bc.model, "Say hi.")
+				if resp.Response == "" {
+					t.Fatal("empty ollama generate response")
+				}
+				if !resp.Done {
+					t.Error("ollama generate response not done")
+				}
+				t.Logf("ollama generate: %q", resp.Response)
+			})
 
-		if !gotDone {
-			t.Error("stream did not end with [DONE]")
-		}
-		if chunkCount == 0 {
-			t.Error("received no SSE chunks")
-		}
-		if accumulated.Len() == 0 {
-			t.Error("accumulated content is empty")
-		}
-	})
+			t.Run("OllamaTags", func(t *testing.T) {
+				status, body := doJSON(t, http.MethodGet, serverURL+"/api/tags", nil)
+				if status != http.StatusOK {
+					t.Fatalf("tags: status=%d body=%s", status, body)
+				}
+				var list struct {
+					Models []struct {
+						Name string `json:"name"`
+					} `json:"models"`
+				}
+				if err := json.Unmarshal(body, &list); err != nil {
+					t.Fatalf("decode: %v", err)
+				}
+				if len(list.Models) == 0 {
+					t.Fatal("no models in /api/tags")
+				}
+				t.Logf("tags returned %d models", len(list.Models))
+			})
 
-	t.Run("RemoveModel", func(t *testing.T) {
-		req, err := http.NewRequestWithContext(t.Context(), http.MethodDelete, fmt.Sprintf("%s/models/%s", serverURL, testModel), nil)
-		if err != nil {
-			t.Fatalf("creating request: %v", err)
-		}
-
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			t.Fatalf("delete request failed: %v", err)
-		}
-		defer resp.Body.Close()
-
-		if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
-			body, _ := io.ReadAll(resp.Body)
-			t.Fatalf("delete failed: status=%d body=%s", resp.StatusCode, body)
-		}
-		t.Logf("model %s removed", testModel)
-	})
+			t.Run("Remove", func(t *testing.T) {
+				removeModel(t, bc.model)
+				t.Logf("removed %s", bc.model)
+			})
+		})
+	}
 }
