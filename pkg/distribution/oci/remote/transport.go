@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -104,6 +105,80 @@ func parseWWWAuthenticate(header string) WWWAuthenticate {
 	return result
 }
 
+// privateOrLoopbackCIDRs lists IP ranges that must never be contacted as a
+// token-exchange realm. Allowing requests to these addresses would let a
+// malicious registry pivot Model Runner into an internal-service proxy
+// (SSRF), reaching endpoints that are not accessible from the public internet.
+var privateOrLoopbackCIDRs = func() []*net.IPNet {
+	cidrs := []string{
+		"127.0.0.0/8",    // loopback IPv4
+		"::1/128",        // loopback IPv6
+		"169.254.0.0/16", // link-local IPv4 / AWS EC2 instance-metadata
+		"fe80::/10",      // link-local IPv6
+		"10.0.0.0/8",     // RFC-1918 private
+		"172.16.0.0/12",  // RFC-1918 private
+		"192.168.0.0/16", // RFC-1918 private
+		"fc00::/7",       // IPv6 ULA
+	}
+	var nets []*net.IPNet
+	for _, cidr := range cidrs {
+		_, n, err := net.ParseCIDR(cidr)
+		if err == nil {
+			nets = append(nets, n)
+		}
+	}
+	return nets
+}()
+
+// internalHostnames lists hostnames that must never be used as a realm, regardless
+// of what IP address they resolve to.
+var internalHostnames = []string{
+	"localhost",
+	"host.docker.internal",
+	"model-runner.docker.internal",
+	"gateway.docker.internal",
+}
+
+// validateRealmURL rejects realm URLs that point to private, loopback, or
+// link-local addresses and known internal hostnames. This prevents SSRF: a
+// malicious registry that returns a crafted WWW-Authenticate header could
+// otherwise cause Model Runner to send (potentially credentialed) HTTP
+// requests to any host-reachable service — including the AWS EC2
+// instance-metadata endpoint, Kubernetes API servers, or other internal APIs.
+func validateRealmURL(rawURL string) error {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return fmt.Errorf("invalid realm URL: %w", err)
+	}
+
+	host := u.Hostname()
+
+	// Block well-known internal hostnames regardless of DNS resolution.
+	for _, internal := range internalHostnames {
+		if strings.EqualFold(host, internal) {
+			return fmt.Errorf("realm URL hostname %q is not allowed", host)
+		}
+	}
+
+	// Resolve the hostname and reject any address in a private/loopback range.
+	ips, err := net.LookupHost(host)
+	if err != nil {
+		return fmt.Errorf("resolving realm hostname %q: %w", host, err)
+	}
+	for _, ipStr := range ips {
+		ip := net.ParseIP(ipStr)
+		if ip == nil {
+			continue
+		}
+		for _, cidr := range privateOrLoopbackCIDRs {
+			if cidr.Contains(ip) {
+				return fmt.Errorf("realm URL resolves to a disallowed address %s", ipStr)
+			}
+		}
+	}
+	return nil
+}
+
 // Exchange exchanges credentials for a bearer token.
 func Exchange(ctx context.Context, reg reference.Registry, auth authn.Authenticator, transport http.RoundTripper, scopes []string, pr *PingResponse) (*Token, error) {
 	if transport == nil {
@@ -111,6 +186,14 @@ func Exchange(ctx context.Context, reg reference.Registry, auth authn.Authentica
 	}
 
 	client := &http.Client{Transport: transport}
+
+	// Validate the realm URL before making any request. The realm value comes
+	// from the registry's WWW-Authenticate header and is therefore attacker-
+	// controlled. Without this check a malicious registry could use Model
+	// Runner as an SSRF proxy to reach internal services.
+	if err := validateRealmURL(pr.WWWAuthenticate.Realm); err != nil {
+		return nil, fmt.Errorf("realm URL rejected: %w", err)
+	}
 
 	// Build token request URL
 	tokenURL, err := url.Parse(pr.WWWAuthenticate.Realm)
