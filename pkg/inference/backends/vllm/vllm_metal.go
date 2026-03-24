@@ -246,6 +246,7 @@ func (v *vllmMetal) buildArgs(bundle interface{ SafetensorsPath() string }, sock
 		"--model", modelPath,
 		"--host", host,
 		"--port", port,
+		"--enable-auto-tool-choice", "--tool-call-parser", "hermes",
 	}
 
 	// Add mode-specific arguments
