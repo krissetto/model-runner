@@ -163,27 +163,29 @@ func resolveAndValidateRealm(rawURL string) (dialAddr, hostname string, err erro
 // resolution. This closes the TOCTOU window between realm URL validation and
 // the actual connection. For TLS connections, serverName is set as the SNI
 // value so that certificate validation still uses the original hostname.
-func buildSafeTransport(base http.RoundTripper, dialAddr, serverName string) http.RoundTripper {
+func buildSafeTransport(base http.RoundTripper, dialAddr, serverName string) (http.RoundTripper, error) {
+	if base == nil {
+		base = http.DefaultTransport
+	}
+
+	t, ok := base.(*http.Transport)
+	if !ok {
+		return nil, fmt.Errorf("cannot build safe transport from base of type %T; only *http.Transport is supported", base)
+	}
+
 	dial := func(ctx context.Context, network, _ string) (net.Conn, error) {
 		return (&net.Dialer{}).DialContext(ctx, network, dialAddr)
 	}
 
-	if t, ok := base.(*http.Transport); ok {
-		cloned := t.Clone()
-		cloned.DialContext = dial
-		if cloned.TLSClientConfig == nil {
-			cloned.TLSClientConfig = &tls.Config{MinVersion: tls.VersionTLS12} //nolint:gosec
-		} else {
-			cloned.TLSClientConfig = cloned.TLSClientConfig.Clone()
-		}
-		cloned.TLSClientConfig.ServerName = serverName
-		return cloned
+	cloned := t.Clone()
+	cloned.DialContext = dial
+	if cloned.TLSClientConfig == nil {
+		cloned.TLSClientConfig = &tls.Config{MinVersion: tls.VersionTLS12} //nolint:gosec
+	} else {
+		cloned.TLSClientConfig = cloned.TLSClientConfig.Clone()
 	}
-
-	return &http.Transport{
-		DialContext:     dial,
-		TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12, ServerName: serverName}, //nolint:gosec
-	}
+	cloned.TLSClientConfig.ServerName = serverName
+	return cloned, nil
 }
 
 // Ping pings a registry and returns authentication information.
@@ -262,7 +264,10 @@ func Exchange(ctx context.Context, _ reference.Registry, auth authn.Authenticato
 		return nil, fmt.Errorf("realm URL rejected: %w", err)
 	}
 
-	safeTransport := buildSafeTransport(transport, dialAddr, hostname)
+	safeTransport, err := buildSafeTransport(transport, dialAddr, hostname)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build safe transport: %w", err)
+	}
 	client := &http.Client{Transport: safeTransport}
 
 	// Build token request URL
