@@ -16,6 +16,7 @@ import (
 	"github.com/docker/model-runner/cmd/cli/commands/completion"
 	"github.com/docker/model-runner/cmd/cli/desktop"
 	"github.com/docker/model-runner/cmd/cli/readline"
+	"github.com/docker/model-runner/cmd/cli/tools"
 	"github.com/docker/model-runner/pkg/inference"
 	"github.com/docker/model-runner/pkg/inference/scheduling"
 	"github.com/fatih/color"
@@ -23,6 +24,15 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
+
+// defaultTools returns the tools enabled by default for interactive sessions.
+// Web search can be disabled by setting DOCKER_MODEL_NO_WEBSEARCH=1.
+func defaultTools() []desktop.ClientTool {
+	if os.Getenv("DOCKER_MODEL_NO_WEBSEARCH") != "" {
+		return nil
+	}
+	return []desktop.ClientTool{&tools.WebSearchTool{}}
+}
 
 // readMultilineInput reads input from stdin, supporting both single-line and multiline input.
 // For multiline input, it detects triple-quoted strings and shows continuation prompts.
@@ -632,11 +642,13 @@ func chatWithMarkdownContext(ctx context.Context, cmd *cobra.Command, client *de
 	// This reflects exactly what the model receives.
 	processedUserMessage = buildUserMessage(prompt, imageURLs)
 
+	activeTools := defaultTools()
+
 	if !useMarkdown {
 		// Simple case: just stream as plain text
 		assistantResponse, err = client.ChatWithMessagesContext(ctx, model, conversationHistory, prompt, imageURLs, func(content string) {
 			cmd.Print(content)
-		}, false)
+		}, false, activeTools...)
 		return assistantResponse, processedUserMessage, err
 	}
 
@@ -655,7 +667,7 @@ func chatWithMarkdownContext(ctx context.Context, cmd *cobra.Command, client *de
 		} else if rendered != "" {
 			cmd.Print(rendered)
 		}
-	}, true)
+	}, true, activeTools...)
 	if err != nil {
 		return assistantResponse, processedUserMessage, err
 	}
