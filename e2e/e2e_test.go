@@ -83,6 +83,11 @@ func run(m *testing.M) int {
 	defer cancel()
 
 	server := exec.CommandContext(ctx, serverBin)
+	// TODO: os.Interrupt is not supported on Windows. When Windows e2e
+	// tests are added, use a platform-specific shutdown mechanism.
+	server.Cancel = func() error {
+		return server.Process.Signal(os.Interrupt)
+	}
 	server.Dir = root
 	server.Env = append(os.Environ(),
 		"MODEL_RUNNER_PORT="+strconv.Itoa(port),
