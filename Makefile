@@ -86,7 +86,7 @@ integration-tests:
 	go test -v -race -count=1 -tags=integration -run "^TestIntegration" -timeout=5m ./cmd/cli/commands
 	@echo "Integration tests completed!"
 
-e2e: build-llamacpp build
+e2e:
 	@echo "Running e2e tests..."
 	@echo "Checking test naming conventions..."
 	@INVALID_TESTS=$$(grep "^func Test" e2e/*_test.go | grep -v "^.*:func TestE2E" | grep -v "^.*:func TestMain"); \
