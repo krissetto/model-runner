@@ -17,8 +17,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/docker/model-runner/pkg/distribution/internal/mutate"
-	"github.com/docker/model-runner/pkg/distribution/internal/partial"
 	"github.com/docker/model-runner/pkg/distribution/internal/progress"
 	"github.com/docker/model-runner/pkg/distribution/internal/testutil"
 	"github.com/docker/model-runner/pkg/distribution/modelpack"
@@ -28,7 +26,6 @@ import (
 	mdregistry "github.com/docker/model-runner/pkg/distribution/registry"
 	"github.com/docker/model-runner/pkg/distribution/registry/testregistry"
 	"github.com/docker/model-runner/pkg/inference/platform"
-	"github.com/opencontainers/go-digest"
 )
 
 var (
@@ -39,18 +36,8 @@ var (
 func newModelPackTestArtifactWithMediaType(t *testing.T, modelFile string, weightMediaType oci.MediaType) *testutil.Artifact {
 	t.Helper()
 
-	layer, err := partial.NewLayer(modelFile, weightMediaType)
-	if err != nil {
-		t.Fatalf("Failed to create ModelPack layer: %v", err)
-	}
-
-	diffID, err := layer.DiffID()
-	if err != nil {
-		t.Fatalf("Failed to get layer DiffID: %v", err)
-	}
-
 	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	mp := modelpack.Model{
+	return testutil.NewModelPackArtifact(t, modelpack.Model{
 		Descriptor: modelpack.ModelDescriptor{
 			CreatedAt: &now,
 			Name:      "dummy-modelpack",
@@ -59,18 +46,7 @@ func newModelPackTestArtifactWithMediaType(t *testing.T, modelFile string, weigh
 			Format:    "gguf",
 			ParamSize: "8B",
 		},
-		ModelFS: modelpack.ModelFS{
-			Type:    "layers",
-			DiffIDs: []digest.Digest{digest.Digest(diffID.String())},
-		},
-	}
-
-	rawConfig, err := json.Marshal(mp)
-	if err != nil {
-		t.Fatalf("Failed to marshal ModelPack config: %v", err)
-	}
-
-	return testutil.NewArtifact(rawConfig, oci.MediaType(modelpack.MediaTypeModelConfigV1), layer)
+	}, testutil.Layer(modelFile, weightMediaType))
 }
 
 func newModelPackTestArtifact(t *testing.T, modelFile string) *testutil.Artifact {
@@ -110,7 +86,7 @@ func TestClientPullModel(t *testing.T) {
 		t.Fatalf("Failed to read test model file: %v", err)
 	}
 
-	model := testutil.BuildModelFromPath(t, testGGUFFile)
+	model := testutil.NewGGUFArtifact(t, testGGUFFile)
 	tag := registryHost + "/testmodel:v1.0.0"
 	ref, err := reference.ParseReference(tag)
 	if err != nil {
@@ -377,7 +353,7 @@ func TestClientPullModel(t *testing.T) {
 		}
 
 		// Use the dummy.gguf file from assets directory
-		mdl := testutil.BuildModelFromPath(t, testGGUFFile)
+		mdl := testutil.NewGGUFArtifact(t, testGGUFFile)
 
 		// Push model to local store
 		testTag := registryHost + "/incomplete-test/model:v1.0.0"
@@ -565,7 +541,11 @@ func TestClientPullModel(t *testing.T) {
 	})
 
 	t.Run("pull unsupported (newer) version", func(t *testing.T) {
-		newMdl := mutate.ConfigMediaType(model, "application/vnd.docker.ai.model.config.v99.0+json")
+		newMdl := testutil.NewGGUFArtifactWithConfigMediaType(
+			t,
+			testGGUFFile,
+			"application/vnd.docker.ai.model.config.v99.0+json",
+		)
 		// Push model to local store
 		testTag := registryHost + "/unsupported-test/model:v1.0.0"
 		ref, err := reference.ParseReference(testTag)
@@ -591,7 +571,7 @@ func TestClientPullModel(t *testing.T) {
 		}
 
 		// Create a safetensors model
-		safetensorsModel := testutil.BuildModelFromPath(t, safetensorsPath)
+		safetensorsModel := testutil.NewSafetensorsArtifact(t, safetensorsPath)
 
 		// Push to registry
 		testTag := registryHost + "/safetensors-test/model:v1.0.0"
@@ -749,7 +729,7 @@ func TestClientGetModel(t *testing.T) {
 	}
 
 	// Create model from test GGUF file
-	model := testutil.BuildModelFromPath(t, testGGUFFile)
+	model := testutil.NewGGUFArtifact(t, testGGUFFile)
 
 	// Push model to local store
 	tag := "test/model:v1.0.0"
@@ -802,7 +782,7 @@ func TestClientListModels(t *testing.T) {
 		t.Fatalf("Failed to write test model file: %v", err)
 	}
 
-	mdl := testutil.BuildModelFromPath(t, modelFile)
+	mdl := testutil.NewGGUFArtifact(t, modelFile)
 
 	// Push models to local store with different manifest digests
 	// First model
@@ -817,7 +797,7 @@ func TestClientListModels(t *testing.T) {
 	if err := os.WriteFile(modelFile2, modelContent2, 0644); err != nil {
 		t.Fatalf("Failed to write test model file: %v", err)
 	}
-	mdl2 := testutil.BuildModelFromPath(t, modelFile2)
+	mdl2 := testutil.NewGGUFArtifact(t, modelFile2)
 
 	// Second model
 	tag2 := "test/model2:v1.0.0"
@@ -1002,7 +982,7 @@ func TestPush(t *testing.T) {
 	tag := uri.Host + "/incomplete-test/model:v1.0.0"
 
 	// Write a test model to the store with the given tag
-	mdl := testutil.BuildModelFromPath(t, testGGUFFile)
+	mdl := testutil.NewGGUFArtifact(t, testGGUFFile)
 	digest, err := mdl.ID()
 	if err != nil {
 		t.Fatalf("Failed to get digest of original model: %v", err)
@@ -1070,7 +1050,7 @@ func TestPushProgress(t *testing.T) {
 	}
 	defer os.Remove(path)
 
-	mdl := testutil.BuildModelFromPath(t, path)
+	mdl := testutil.NewGGUFArtifact(t, path)
 
 	if err := client.store.Write(mdl, []string{tag}, nil); err != nil {
 		t.Fatalf("Failed to write model to store: %v", err)
@@ -1133,7 +1113,7 @@ func TestTag(t *testing.T) {
 	}
 
 	// Create a test model
-	model := testutil.BuildModelFromPath(t, testGGUFFile)
+	model := testutil.NewGGUFArtifact(t, testGGUFFile)
 	id, err := model.ID()
 	if err != nil {
 		t.Fatalf("Failed to get model ID: %v", err)
@@ -1231,7 +1211,7 @@ func TestIsModelInStoreFound(t *testing.T) {
 	}
 
 	// Create a test model
-	model := testutil.BuildModelFromPath(t, testGGUFFile)
+	model := testutil.NewGGUFArtifact(t, testGGUFFile)
 
 	// Normalize the model name before writing
 	normalized := client.normalizeModelName("some-repo:some-tag")
@@ -1259,7 +1239,7 @@ func writeToRegistry(t *testing.T, source, refStr string, opts ...remote.Option)
 	}
 
 	// Create image with layer
-	mdl := testutil.BuildModelFromPath(t, source)
+	mdl := testutil.NewGGUFArtifact(t, source)
 
 	// Push the image
 	if err := remote.Write(ref, mdl, nil, opts...); err != nil {
@@ -1322,7 +1302,7 @@ func TestMigrateHFTagsOnClientInit(t *testing.T) {
 				t.Fatalf("Failed to create setup client: %v", err)
 			}
 
-			model := testutil.BuildModelFromPath(t, testGGUFFile)
+			model := testutil.NewGGUFArtifact(t, testGGUFFile)
 
 			if err := setupClient.store.Write(model, []string{tc.storedTag}, nil); err != nil {
 				t.Fatalf("Failed to write model to store: %v", err)
@@ -1396,7 +1376,7 @@ func TestPullHuggingFaceModelFromCache(t *testing.T) {
 			}
 
 			// Create a test model and write it to the store with a normalized HuggingFace tag
-			model := testutil.BuildModelFromPath(t, testGGUFFile)
+			model := testutil.NewGGUFArtifact(t, testGGUFFile)
 
 			// Store with normalized tag (huggingface.co)
 			hfTag := "huggingface.co/testorg/testmodel:latest"

@@ -4,7 +4,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/docker/model-runner/pkg/distribution/internal/mutate"
 	"github.com/docker/model-runner/pkg/distribution/internal/partial"
 	"github.com/docker/model-runner/pkg/distribution/internal/testutil"
 	"github.com/docker/model-runner/pkg/distribution/oci"
@@ -111,19 +110,14 @@ func TestConfigFile(t *testing.T) {
 }
 
 func TestMMPROJPath(t *testing.T) {
-	// Create a model from GGUF file
-	mdl := testutil.BuildModelFromPath(t, filepath.Join("..", "..", "assets", "dummy.gguf"))
-
-	// Add multimodal projector layer
-	mmprojLayer, err := partial.NewLayer(filepath.Join("..", "..", "assets", "dummy.mmproj"), types.MediaTypeMultimodalProjector)
-	if err != nil {
-		t.Fatalf("Failed to create multimodal projector layer: %v", err)
-	}
-
-	mdlWithMMProj := mutate.AppendLayers(mdl, mmprojLayer)
+	mdl := testutil.NewGGUFArtifact(
+		t,
+		filepath.Join("..", "..", "assets", "dummy.gguf"),
+		testutil.Layer(filepath.Join("..", "..", "assets", "dummy.mmproj"), types.MediaTypeMultimodalProjector),
+	)
 
 	// Test MMPROJPath function
-	mmprojPath, err := partial.MMPROJPath(mdlWithMMProj)
+	mmprojPath, err := partial.MMPROJPath(mdl)
 	if err != nil {
 		t.Fatalf("Failed to get multimodal projector path: %v", err)
 	}
@@ -135,8 +129,7 @@ func TestMMPROJPath(t *testing.T) {
 }
 
 func TestMMPROJPathNotFound(t *testing.T) {
-	// Create a model from a GGUF file without a Multimodal projector
-	mdl := testutil.BuildModelFromPath(t, filepath.Join("..", "..", "assets", "dummy.gguf"))
+	mdl := testutil.NewGGUFArtifact(t, filepath.Join("..", "..", "assets", "dummy.gguf"))
 
 	// Test MMPROJPath function should return error
 	_, err := partial.MMPROJPath(mdl)
@@ -151,8 +144,7 @@ func TestMMPROJPathNotFound(t *testing.T) {
 }
 
 func TestGGUFPath(t *testing.T) {
-	// Create a model from GGUF file
-	mdl := testutil.BuildModelFromPath(t, filepath.Join("..", "..", "assets", "dummy.gguf"))
+	mdl := testutil.NewGGUFArtifact(t, filepath.Join("..", "..", "assets", "dummy.gguf"))
 
 	// Test GGUFPath function
 	ggufPaths, err := partial.GGUFPaths(mdl)
@@ -171,25 +163,15 @@ func TestGGUFPath(t *testing.T) {
 }
 
 func TestLayerPathByMediaType(t *testing.T) {
-	// Create a model from GGUF file
-	mdl := testutil.BuildModelFromPath(t, filepath.Join("..", "..", "assets", "dummy.gguf"))
-
-	// Add license layer
-	licenseLayer, err := partial.NewLayer(filepath.Join("..", "..", "assets", "license.txt"), types.MediaTypeLicense)
-	if err != nil {
-		t.Fatalf("Failed to create license layer: %v", err)
-	}
-
-	// Add a Multimodal projector layer
-	mmprojLayer, err := partial.NewLayer(filepath.Join("..", "..", "assets", "dummy.mmproj"), types.MediaTypeMultimodalProjector)
-	if err != nil {
-		t.Fatalf("Failed to create multimodal projector layer: %v", err)
-	}
-
-	mdlWithLayers := mutate.AppendLayers(mdl, licenseLayer, mmprojLayer)
+	mdl := testutil.NewGGUFArtifact(
+		t,
+		filepath.Join("..", "..", "assets", "dummy.gguf"),
+		testutil.Layer(filepath.Join("..", "..", "assets", "license.txt"), types.MediaTypeLicense),
+		testutil.Layer(filepath.Join("..", "..", "assets", "dummy.mmproj"), types.MediaTypeMultimodalProjector),
+	)
 
 	// Test that we can find each layer type
-	ggufPaths, err := partial.GGUFPaths(mdlWithLayers)
+	ggufPaths, err := partial.GGUFPaths(mdl)
 	if err != nil {
 		t.Fatalf("Failed to get GGUF path: %v", err)
 	}
@@ -201,7 +183,7 @@ func TestLayerPathByMediaType(t *testing.T) {
 		t.Errorf("Expected GGUF path to be: %s, got: %s", filepath.Join("..", "..", "assets", "dummy.gguf"), ggufPaths[0])
 	}
 
-	mmprojPath, err := partial.MMPROJPath(mdlWithLayers)
+	mmprojPath, err := partial.MMPROJPath(mdl)
 	if err != nil {
 		t.Fatalf("Failed to get multimodal projector path: %v", err)
 	}
@@ -213,21 +195,14 @@ func TestLayerPathByMediaType(t *testing.T) {
 
 // TestGGUFPaths_ModelPackMediaType tests that GGUFPaths can find ModelPack format layers
 func TestGGUFPaths_ModelPackMediaType(t *testing.T) {
-	// Create a layer with ModelPack GGUF media type
-	modelPackGGUFType := oci.MediaType("application/vnd.cncf.model.weight.v1.gguf")
-
-	layer, err := partial.NewLayer(filepath.Join("..", "..", "assets", "dummy.gguf"), modelPackGGUFType)
-	if err != nil {
-		t.Fatalf("Failed to create ModelPack layer: %v", err)
-	}
-
-	// Create a model with mutate and add the layer
-	mdl := testutil.BuildModelFromPath(t, filepath.Join("..", "..", "assets", "dummy.gguf"))
-
-	mdlWithModelPackLayer := mutate.AppendLayers(mdl, layer)
+	mdl := testutil.NewGGUFArtifact(
+		t,
+		filepath.Join("..", "..", "assets", "dummy.gguf"),
+		testutil.Layer(filepath.Join("..", "..", "assets", "dummy.gguf"), oci.MediaType("application/vnd.cncf.model.weight.v1.gguf")),
+	)
 
 	// GGUFPaths should be able to find ModelPack format GGUF layers
-	paths, err := partial.GGUFPaths(mdlWithModelPackLayer)
+	paths, err := partial.GGUFPaths(mdl)
 	if err != nil {
 		t.Fatalf("GGUFPaths() error = %v", err)
 	}
@@ -242,22 +217,15 @@ func TestGGUFPaths_ModelPackMediaType(t *testing.T) {
 // the real CNCF model-spec format-agnostic media type (application/vnd.cncf.model.weight.v1.raw)
 // when the model config specifies format as "gguf".
 func TestGGUFPaths_ModelPackRawMediaType(t *testing.T) {
-	// Create a layer with the real model-spec raw weight media type
-	modelPackRawType := oci.MediaType("application/vnd.cncf.model.weight.v1.raw")
-
-	layer, err := partial.NewLayer(filepath.Join("..", "..", "assets", "dummy.gguf"), modelPackRawType)
-	if err != nil {
-		t.Fatalf("Failed to create ModelPack raw layer: %v", err)
-	}
-
-	// Create a model with mutate and add the layer
-	mdl := testutil.BuildModelFromPath(t, filepath.Join("..", "..", "assets", "dummy.gguf"))
-
-	mdlWithRawLayer := mutate.AppendLayers(mdl, layer)
+	mdl := testutil.NewGGUFArtifact(
+		t,
+		filepath.Join("..", "..", "assets", "dummy.gguf"),
+		testutil.Layer(filepath.Join("..", "..", "assets", "dummy.gguf"), oci.MediaType("application/vnd.cncf.model.weight.v1.raw")),
+	)
 
 	// GGUFPaths should find both: original Docker GGUF + raw ModelPack layer
-	// because the model config format is "gguf" (set by BuildModelFromPath)
-	paths, err := partial.GGUFPaths(mdlWithRawLayer)
+	// because the synthetic Docker config still declares the model format as "gguf".
+	paths, err := partial.GGUFPaths(mdl)
 	if err != nil {
 		t.Fatalf("GGUFPaths() error = %v", err)
 	}
