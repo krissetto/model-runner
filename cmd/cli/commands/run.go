@@ -25,13 +25,16 @@ import (
 	"golang.org/x/term"
 )
 
-// defaultTools returns the tools enabled by default for interactive sessions.
-// Web search can be disabled by setting DOCKER_MODEL_NO_WEBSEARCH=1.
-func defaultTools() []desktop.ClientTool {
-	if os.Getenv("DOCKER_MODEL_NO_WEBSEARCH") != "" {
-		return nil
+// getActiveTools returns the tools to use for a session based on command flags.
+func getActiveTools(cmd *cobra.Command) ([]desktop.ClientTool, error) {
+	websearch, err := cmd.Flags().GetBool("websearch")
+	if err != nil {
+		return nil, fmt.Errorf("could not get websearch flag: %w", err)
 	}
-	return []desktop.ClientTool{&tools.WebSearchTool{}}
+	if websearch {
+		return []desktop.ClientTool{&tools.WebSearchTool{}}, nil
+	}
+	return nil, nil
 }
 
 // readMultilineInput reads input from stdin, supporting both single-line and multiline input.
@@ -642,7 +645,10 @@ func chatWithMarkdownContext(ctx context.Context, cmd *cobra.Command, client *de
 	// This reflects exactly what the model receives.
 	processedUserMessage = buildUserMessage(prompt, imageURLs)
 
-	activeTools := defaultTools()
+	activeTools, err := getActiveTools(cmd)
+	if err != nil {
+		return "", desktop.OpenAIChatMessage{}, err
+	}
 
 	if !useMarkdown {
 		// Simple case: just stream as plain text
@@ -877,6 +883,7 @@ func newRunCmd() *cobra.Command {
 	c.Flags().StringVar(&colorMode, "color", "no", "Use colored output (auto|yes|no)")
 	c.Flags().BoolVarP(&detach, "detach", "d", false, "Load the model in the background without interaction")
 	c.Flags().StringVar(&openaiURL, "openaiurl", "", "OpenAI-compatible API endpoint URL to chat with")
+	c.Flags().Bool("websearch", false, "Enable web search tool during chat")
 
 	return c
 }
