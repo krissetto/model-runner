@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"path/filepath"
 	"testing"
 
 	"github.com/docker/model-runner/pkg/distribution/builder"
@@ -34,11 +35,12 @@ type LayerSpec struct {
 	MediaType    oci.MediaType
 }
 
-// Layer creates a layer spec using the file basename as the unpacked relative path.
+// Layer creates a layer spec with the file basename set as the unpacked relative path.
 func Layer(path string, mediaType oci.MediaType) LayerSpec {
 	return LayerSpec{
-		Path:      path,
-		MediaType: mediaType,
+		Path:         path,
+		RelativePath: filepath.Base(path),
+		MediaType:    mediaType,
 	}
 }
 
