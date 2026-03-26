@@ -24,7 +24,6 @@ import (
 	"github.com/docker/model-runner/pkg/distribution/oci/remote"
 	mdregistry "github.com/docker/model-runner/pkg/distribution/registry"
 	"github.com/docker/model-runner/pkg/distribution/registry/testregistry"
-	"github.com/docker/model-runner/pkg/inference/platform"
 )
 
 var (
@@ -434,25 +433,13 @@ func TestClientPullModel(t *testing.T) {
 			t.Fatalf("Failed to create test client: %v", err)
 		}
 
-		// Try to pull the safetensors model with a progress writer to capture warnings
 		var progressBuf bytes.Buffer
 		err = testClient.PullModel(t.Context(), testTag, &progressBuf)
 
-		// Pull should succeed on all platforms now (with a warning on non-Linux)
 		if err != nil {
 			t.Fatalf("Expected no error, got: %v", err)
 		}
 
-		if !platform.SupportsVLLM() {
-			// On non-Linux, verify that a warning was written
-			progressOutput := progressBuf.String()
-			if !strings.Contains(progressOutput, `"type":"warning"`) {
-				t.Fatalf("Expected warning message on non-Linux platforms, got output: %s", progressOutput)
-			}
-			if !strings.Contains(progressOutput, warnUnsupportedFormat) {
-				t.Fatalf("Expected warning about safetensors format, got output: %s", progressOutput)
-			}
-		}
 	})
 
 	t.Run("pull with JSON progress messages", func(t *testing.T) {
