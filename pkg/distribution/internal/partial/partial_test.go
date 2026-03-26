@@ -235,3 +235,57 @@ func TestGGUFPaths_ModelPackRawMediaType(t *testing.T) {
 		t.Errorf("Expected 2 GGUF paths, got %d", len(paths))
 	}
 }
+
+// TestGGUFPaths_NoFalsePositive_SafetensorsModelPackType tests that a format-specific
+// ModelPack safetensors layer is NOT incorrectly matched as GGUF, even when the model
+// config declares the format as "gguf".
+// Regression test for: IsModelPackWeightMediaType applying the format-agnostic fallback
+// to format-specific types, causing cross-format false positives.
+func TestGGUFPaths_NoFalsePositive_SafetensorsModelPackType(t *testing.T) {
+	// Build a GGUF artifact but add an extra layer with the safetensors-specific ModelPack type.
+	mdl := testutil.NewGGUFArtifact(
+		t,
+		filepath.Join("..", "..", "assets", "dummy.gguf"),
+		testutil.Layer(
+			filepath.Join("..", "..", "assets", "dummy.gguf"),
+			oci.MediaType("application/vnd.cncf.model.weight.v1.safetensors"),
+		),
+	)
+
+	paths, err := partial.GGUFPaths(mdl)
+	if err != nil {
+		t.Fatalf("GGUFPaths() error = %v", err)
+	}
+
+	// Should find only the one Docker-format GGUF layer.
+	// The safetensors-typed layer must NOT be returned as a GGUF path.
+	if len(paths) != 1 {
+		t.Errorf("Expected 1 GGUF path (safetensors layer must not match), got %d", len(paths))
+	}
+}
+
+// TestSafetensorsPaths_NoFalsePositive_GGUFModelPackType tests that a format-specific
+// ModelPack GGUF layer is NOT incorrectly matched as safetensors, even when the model
+// config declares the format as "safetensors".
+func TestSafetensorsPaths_NoFalsePositive_GGUFModelPackType(t *testing.T) {
+	// Build a safetensors artifact but add an extra layer with the GGUF-specific ModelPack type.
+	mdl := testutil.NewSafetensorsArtifact(
+		t,
+		filepath.Join("..", "..", "assets", "dummy.gguf"),
+		testutil.Layer(
+			filepath.Join("..", "..", "assets", "dummy.gguf"),
+			oci.MediaType("application/vnd.cncf.model.weight.v1.gguf"),
+		),
+	)
+
+	paths, err := partial.SafetensorsPaths(mdl)
+	if err != nil {
+		t.Fatalf("SafetensorsPaths() error = %v", err)
+	}
+
+	// Should find only the one Docker-format safetensors layer.
+	// The GGUF-typed layer must NOT be returned as a safetensors path.
+	if len(paths) != 1 {
+		t.Errorf("Expected 1 safetensors path (GGUF layer must not match), got %d", len(paths))
+	}
+}

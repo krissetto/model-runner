@@ -206,8 +206,11 @@ func matchesMediaType(layerMT, targetMT oci.MediaType, modelFormat string) bool 
 	}
 
 	// ModelPack model-spec support: format-agnostic weight types (.raw, .tar, etc.)
-	// The actual model format is determined from the config (config.format field).
-	if modelFormat != "" && modelpack.IsModelPackWeightMediaType(string(layerMT)) {
+	// Only truly generic/format-agnostic types qualify here. Format-specific types
+	// (e.g., MediaTypeWeightGGUF, MediaTypeWeightSafetensors) already encode the format
+	// in their media type and are handled above; applying this fallback to them would
+	// cause cross-format false positives (e.g., safetensors layer matching as GGUF).
+	if modelFormat != "" && modelpack.IsModelPackGenericWeightMediaType(string(layerMT)) {
 		//nolint:exhaustive // Only GGUF and Safetensors need cross-format matching
 		switch targetMT {
 		case types.MediaTypeGGUF:

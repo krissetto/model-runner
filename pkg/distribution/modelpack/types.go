@@ -47,6 +47,22 @@ func IsModelPackWeightMediaType(mediaType string) bool {
 	return strings.HasPrefix(mediaType, MediaTypeWeightPrefix)
 }
 
+// IsModelPackGenericWeightMediaType checks if the given media type is a format-agnostic
+// CNCF ModelPack weight layer type (e.g., MediaTypeWeightRaw).
+// Unlike IsModelPackWeightMediaType, this returns false for format-specific types
+// like MediaTypeWeightGGUF or MediaTypeWeightSafetensors, which already encode the
+// format in the media type itself and must not be matched via the model config format.
+// Use this when the actual format must be inferred from the model config rather than
+// the layer media type.
+func IsModelPackGenericWeightMediaType(mediaType string) bool {
+	switch mediaType {
+	case MediaTypeWeightRaw:
+		return true
+	default:
+		return false
+	}
+}
+
 // IsModelPackConfig detects if raw config bytes are in ModelPack format.
 // It parses the JSON structure for precise detection, avoiding false positives from string matching.
 // ModelPack format characteristics: config.paramSize or descriptor.createdAt
