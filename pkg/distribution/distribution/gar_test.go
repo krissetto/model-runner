@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/docker/model-runner/pkg/distribution/builder"
+	"github.com/docker/model-runner/pkg/distribution/internal/testutil"
 )
 
 func TestGARIntegration(t *testing.T) {
@@ -36,11 +36,7 @@ func TestGARIntegration(t *testing.T) {
 
 	// Test push to GAR
 	t.Run("Push", func(t *testing.T) {
-		b, err := builder.FromPath(testGGUFFile)
-		if err != nil {
-			t.Fatalf("Failed to create model: %v", err)
-		}
-		mdl := b.Model()
+		mdl := testutil.NewGGUFArtifact(t, testGGUFFile)
 		if err := client.store.Write(mdl, []string{garTag}, nil); err != nil {
 			t.Fatalf("Failed to write model to store: %v", err)
 		}
