@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/docker/model-runner/pkg/inference/platform"
 )
 
 type backendTestCase struct {
@@ -14,10 +16,15 @@ type backendTestCase struct {
 	model string
 }
 
-var backends = []backendTestCase{
-	{"llama.cpp", ggufModel},
-	{"vllm-metal", mlxModel},
-}
+var backends = func() []backendTestCase {
+	b := []backendTestCase{
+		{"llama.cpp", ggufModel},
+	}
+	if platform.SupportsVLLMMetal() {
+		b = append(b, backendTestCase{"vllm-metal", mlxModel})
+	}
+	return b
+}()
 
 func TestE2E_Inference(t *testing.T) {
 	for _, bc := range backends {

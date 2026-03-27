@@ -3,7 +3,7 @@ APP_NAME := model-runner
 GO_VERSION := 1.25.8
 LLAMA_SERVER_VERSION := latest
 LLAMA_SERVER_VARIANT := cpu
-BASE_IMAGE := ubuntu:24.04
+BASE_IMAGE := ubuntu:26.04
 VLLM_BASE_IMAGE := nvidia/cuda:13.0.2-runtime-ubuntu24.04
 VLLM_VERSION ?= 0.17.0
 DOCKER_IMAGE := docker/model-runner:latest
@@ -86,7 +86,7 @@ integration-tests:
 	go test -v -race -count=1 -tags=integration -run "^TestIntegration" -timeout=5m ./cmd/cli/commands
 	@echo "Integration tests completed!"
 
-e2e: build-llamacpp build
+e2e:
 	@echo "Running e2e tests..."
 	@echo "Checking test naming conventions..."
 	@INVALID_TESTS=$$(grep "^func Test" e2e/*_test.go | grep -v "^.*:func TestE2E" | grep -v "^.*:func TestMain"); \

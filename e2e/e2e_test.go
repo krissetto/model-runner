@@ -20,6 +20,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -53,15 +54,27 @@ func run(m *testing.M) int {
 		fmt.Fprintf(os.Stderr, "e2e: %v\n", err)
 		return 1
 	}
+	cliBin = filepath.Join(root, "cmd", "cli", "model-cli")
 
-	fmt.Fprintln(os.Stderr, "e2e: building server and CLI...")
+	if runtime.GOOS == "darwin" {
+		return runNative(m, root)
+	}
+	return runDocker(m, root)
+}
+
+// runNative builds the server from source and runs it as a local process.
+func runNative(m *testing.M, root string) int {
+	fmt.Fprintln(os.Stderr, "e2e: building llama.cpp, server, and CLI...")
+	if err := makeTarget(root, "build-llamacpp"); err != nil {
+		fmt.Fprintf(os.Stderr, "e2e: make build-llamacpp failed: %v\n", err)
+		return 1
+	}
 	if err := makeTarget(root, "build"); err != nil {
 		fmt.Fprintf(os.Stderr, "e2e: make build failed: %v\n", err)
 		return 1
 	}
 
 	serverBin := filepath.Join(root, "model-runner")
-	cliBin = filepath.Join(root, "cmd", "cli", "model-cli")
 	llamaBin := filepath.Join(root, "llamacpp", "install", "bin")
 
 	for _, path := range []string{serverBin, cliBin, llamaBin} {
@@ -105,12 +118,50 @@ func run(m *testing.M) int {
 		_ = server.Wait()
 	}()
 
+	return waitAndRunTests(m)
+}
+
+// runDocker builds the Docker image and CLI from source, then lets the CLI
+// auto-start the model-runner container on the default Moby port (12434).
+func runDocker(m *testing.M, root string) int {
+	fmt.Fprintln(os.Stderr, "e2e: building Docker image and CLI...")
+	if err := makeTarget(root, "docker-build"); err != nil {
+		fmt.Fprintf(os.Stderr, "e2e: make docker-build failed: %v\n", err)
+		return 1
+	}
+	if err := makeTarget(root, "build-cli"); err != nil {
+		fmt.Fprintf(os.Stderr, "e2e: make build-cli failed: %v\n", err)
+		return 1
+	}
+
+	// Tag the locally built image so install-runner uses it
+	// instead of pulling from Docker Hub.
+	tag := exec.Command("docker", "tag", "docker/model-runner:latest", "docker/model-runner:e2e-local")
+	if err := tag.Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "e2e: docker tag failed: %v\n", err)
+		return 1
+	}
+
+	fmt.Fprintln(os.Stderr, "e2e: installing runner...")
+	cmd := exec.Command(cliBin, "install-runner")
+	cmd.Env = append(os.Environ(), "MODEL_RUNNER_CONTROLLER_VERSION=e2e-local")
+	cmd.Stdout = os.Stderr
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "e2e: install-runner failed: %v\n", err)
+		return 1
+	}
+
+	serverURL = "http://localhost:12434"
+	return waitAndRunTests(m)
+}
+
+func waitAndRunTests(m *testing.M) int {
 	if err := waitForServer(serverURL+"/models", serverStartTimeout); err != nil {
 		fmt.Fprintf(os.Stderr, "e2e: %v\n", err)
 		return 1
 	}
 	fmt.Fprintf(os.Stderr, "e2e: server ready at %s\n", serverURL)
-
 	return m.Run()
 }
 
