@@ -320,16 +320,16 @@ type mockModel struct {
 	desc   types.Descriptor
 }
 
-func (m *mockModel) ID() (string, error)                    { return m.id, nil }
-func (m *mockModel) Tags() []string                         { return m.tags }
-func (m *mockModel) Config() (types.ModelConfig, error)     { return m.config, nil }
-func (m *mockModel) Descriptor() (types.Descriptor, error)  { return m.desc, nil }
-func (m *mockModel) GGUFPaths() ([]string, error)           { return nil, nil }
-func (m *mockModel) SafetensorsPaths() ([]string, error)    { return nil, nil }
-func (m *mockModel) DDUFPaths() ([]string, error)           { return nil, nil }
-func (m *mockModel) ConfigArchivePath() (string, error)     { return "", nil }
-func (m *mockModel) MMPROJPath() (string, error)            { return "", nil }
-func (m *mockModel) ChatTemplatePath() (string, error)      { return "", nil }
+func (m *mockModel) ID() (string, error)                   { return m.id, nil }
+func (m *mockModel) Tags() []string                        { return m.tags }
+func (m *mockModel) Config() (types.ModelConfig, error)    { return m.config, nil }
+func (m *mockModel) Descriptor() (types.Descriptor, error) { return m.desc, nil }
+func (m *mockModel) GGUFPaths() ([]string, error)          { return nil, nil }
+func (m *mockModel) SafetensorsPaths() ([]string, error)   { return nil, nil }
+func (m *mockModel) DDUFPaths() ([]string, error)          { return nil, nil }
+func (m *mockModel) ConfigArchivePath() (string, error)    { return "", nil }
+func (m *mockModel) MMPROJPath() (string, error)           { return "", nil }
+func (m *mockModel) ChatTemplatePath() (string, error)     { return "", nil }
 
 func TestToOpenAIWithFullConfig(t *testing.T) {
 	m := &mockModel{
