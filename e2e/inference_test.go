@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/docker/model-runner/pkg/inference/backends/llamacpp"
+	"github.com/docker/model-runner/pkg/inference/backends/vllm"
 	"github.com/docker/model-runner/pkg/inference/platform"
 )
 
@@ -18,10 +20,10 @@ type backendTestCase struct {
 
 var backends = func() []backendTestCase {
 	b := []backendTestCase{
-		{"llama.cpp", ggufModel},
+		{llamacpp.Name, ggufModel},
 	}
 	if platform.SupportsVLLMMetal() {
-		b = append(b, backendTestCase{"vllm-metal", mlxModel})
+		b = append(b, backendTestCase{vllm.Name, mlxModel})
 	}
 	return b
 }()
@@ -170,6 +172,10 @@ func TestE2E_Inference(t *testing.T) {
 			})
 
 			t.Run("Remove", func(t *testing.T) {
+				out, err := runCLI(t, "unload", "--all")
+				if err != nil {
+					t.Fatalf("cli unload failed: %v\noutput: %s", err, out)
+				}
 				removeModel(t, bc.model)
 				t.Logf("removed %s", bc.model)
 			})
