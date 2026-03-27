@@ -40,6 +40,41 @@ func TestE2E_CLI(t *testing.T) {
 				t.Logf("run output: %s", out)
 			})
 
+			t.Run("PS", func(t *testing.T) {
+				out, err := runCLI(t, "ps")
+				if err != nil {
+					t.Fatalf("cli ps failed: %v\noutput: %s", err, out)
+				}
+				// TODO: ps should return lowercased model names like ls does
+				if !strings.Contains(strings.ToLower(out), "smollm2") {
+					t.Errorf("expected model in ps output, got:\n%s", out)
+				}
+				if !strings.Contains(out, bc.name) {
+					t.Errorf("expected backend %s in ps output, got:\n%s", bc.name, out)
+				}
+				t.Logf("ps output:\n%s", out)
+			})
+
+			t.Run("Unload", func(t *testing.T) {
+				out, err := runCLI(t, "unload", bc.model)
+				if err != nil {
+					t.Fatalf("cli unload failed: %v\noutput: %s", err, out)
+				}
+			})
+
+			t.Run("PSAfterUnload", func(t *testing.T) {
+				out, err := runCLI(t, "ps")
+				if err != nil {
+					t.Fatalf("cli ps failed: %v\noutput: %s", err, out)
+				}
+				if strings.Contains(out, "smollm2") {
+					t.Errorf("model still running after unload:\n%s", out)
+				}
+				if strings.Contains(out, bc.name) {
+					t.Errorf("backend %s still running after unload:\n%s", bc.name, out)
+				}
+			})
+
 			t.Run("Remove", func(t *testing.T) {
 				out, err := runCLI(t, "rm", "-f", bc.model)
 				if err != nil {
