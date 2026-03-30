@@ -96,6 +96,7 @@ func NewRootCmd(cli *command.DockerCli) *cobra.Command {
 		newSearchCmd(),
 		newSkillsCmd(),
 	)
+	rootCmd.AddCommand(newGatewayCmd())
 
 	// Commands that require a running model runner. These are wrapped to ensure the standalone runner is available.
 	for _, cmd := range []*cobra.Command{
