@@ -4,6 +4,10 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/docker/model-runner/pkg/distribution/modelpack"
+	"github.com/docker/model-runner/pkg/distribution/oci"
+	"github.com/docker/model-runner/pkg/distribution/types"
 )
 
 func TestValidatePathWithinDirectory(t *testing.T) {
@@ -119,6 +123,161 @@ func TestValidatePathWithinDirectory(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestUpdateBundleFieldsFromLayer_CNCFMediaTypes(t *testing.T) {
+	tests := []struct {
+		name              string
+		mediaType         oci.MediaType
+		relPath           string
+		modelFormat       string
+		expectGGUF        string
+		expectSafetensors string
+	}{
+		{
+			name:              "Docker safetensors media type",
+			mediaType:         types.MediaTypeSafetensors,
+			relPath:           "model/model.safetensors",
+			modelFormat:       "",
+			expectSafetensors: "model/model.safetensors",
+		},
+		{
+			name:              "CNCF format-specific safetensors media type",
+			mediaType:         oci.MediaType(modelpack.MediaTypeWeightSafetensors),
+			relPath:           "model/model.safetensors",
+			modelFormat:       "",
+			expectSafetensors: "model/model.safetensors",
+		},
+		{
+			name:        "CNCF format-specific GGUF media type",
+			mediaType:   oci.MediaType(modelpack.MediaTypeWeightGGUF),
+			relPath:     "model/model.gguf",
+			modelFormat: "",
+			expectGGUF:  "model/model.gguf",
+		},
+		{
+			name:              "CNCF generic weight raw with safetensors format",
+			mediaType:         oci.MediaType(modelpack.MediaTypeWeightRaw),
+			relPath:           "model/model.safetensors",
+			modelFormat:       string(types.FormatSafetensors),
+			expectSafetensors: "model/model.safetensors",
+		},
+		{
+			name:        "CNCF generic weight raw with GGUF format",
+			mediaType:   oci.MediaType(modelpack.MediaTypeWeightRaw),
+			relPath:     "model/model.gguf",
+			modelFormat: string(types.FormatGGUF),
+			expectGGUF:  "model/model.gguf",
+		},
+		{
+			name:              "CNCF generic weight raw without format does nothing",
+			mediaType:         oci.MediaType(modelpack.MediaTypeWeightRaw),
+			relPath:           "model/model.safetensors",
+			modelFormat:       "",
+			expectSafetensors: "",
+			expectGGUF:        "",
+		},
+		{
+			name:              "unknown media type does nothing",
+			mediaType:         "application/vnd.cncf.model.weight.config.v1.raw",
+			relPath:           "model/config.json",
+			modelFormat:       string(types.FormatSafetensors),
+			expectSafetensors: "",
+			expectGGUF:        "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			bundle := &Bundle{}
+			updateBundleFieldsFromLayer(bundle, tt.mediaType, tt.relPath, tt.modelFormat)
+
+			if bundle.safetensorsFile != tt.expectSafetensors {
+				t.Errorf("safetensorsFile = %q, want %q", bundle.safetensorsFile, tt.expectSafetensors)
+			}
+			if bundle.ggufFile != tt.expectGGUF {
+				t.Errorf("ggufFile = %q, want %q", bundle.ggufFile, tt.expectGGUF)
+			}
+		})
+	}
+}
+
+func TestIsCNCFModel(t *testing.T) {
+	tests := []struct {
+		name            string
+		configMediaType oci.MediaType
+		expected        bool
+	}{
+		{
+			name:            "CNCF ModelPack config V1",
+			configMediaType: modelpack.MediaTypeModelConfigV1,
+			expected:        true,
+		},
+		{
+			name:            "Docker V0.1 config",
+			configMediaType: types.MediaTypeModelConfigV01,
+			expected:        false,
+		},
+		{
+			name:            "Docker V0.2 config",
+			configMediaType: types.MediaTypeModelConfigV02,
+			expected:        false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create a minimal artifact with the given config media type
+			artifact := &testArtifactWithConfigMediaType{
+				configMediaType: tt.configMediaType,
+			}
+			result := isCNCFModel(artifact)
+			if result != tt.expected {
+				t.Errorf("isCNCFModel() = %v, want %v", result, tt.expected)
+			}
+		})
+	}
+}
+
+// testArtifactWithConfigMediaType is a minimal ModelArtifact for testing isCNCFModel/isV02Model.
+type testArtifactWithConfigMediaType struct {
+	configMediaType oci.MediaType
+}
+
+func (a *testArtifactWithConfigMediaType) Manifest() (*oci.Manifest, error) {
+	return &oci.Manifest{
+		Config: oci.Descriptor{
+			MediaType: a.configMediaType,
+		},
+	}, nil
+}
+
+// Stubs to satisfy types.ModelArtifact interface (not used in these tests).
+func (a *testArtifactWithConfigMediaType) ID() (string, error) { return "", nil }
+func (a *testArtifactWithConfigMediaType) Config() (types.ModelConfig, error) {
+	return nil, nil
+}
+func (a *testArtifactWithConfigMediaType) Tags() []string { return nil }
+func (a *testArtifactWithConfigMediaType) Descriptor() (types.Descriptor, error) {
+	return types.Descriptor{}, nil
+}
+func (a *testArtifactWithConfigMediaType) GGUFPaths() ([]string, error) { return nil, nil }
+func (a *testArtifactWithConfigMediaType) SafetensorsPaths() ([]string, error) {
+	return nil, nil
+}
+func (a *testArtifactWithConfigMediaType) Layers() ([]oci.Layer, error)         { return nil, nil }
+func (a *testArtifactWithConfigMediaType) RawConfigFile() ([]byte, error)       { return nil, nil }
+func (a *testArtifactWithConfigMediaType) RawManifest() ([]byte, error)         { return nil, nil }
+func (a *testArtifactWithConfigMediaType) MediaType() (oci.MediaType, error)    { return "", nil }
+func (a *testArtifactWithConfigMediaType) Size() (int64, error)                 { return 0, nil }
+func (a *testArtifactWithConfigMediaType) ConfigName() (oci.Hash, error)        { return oci.Hash{}, nil }
+func (a *testArtifactWithConfigMediaType) ConfigFile() (*oci.ConfigFile, error) { return nil, nil }
+func (a *testArtifactWithConfigMediaType) Digest() (oci.Hash, error)            { return oci.Hash{}, nil }
+func (a *testArtifactWithConfigMediaType) LayerByDigest(oci.Hash) (oci.Layer, error) {
+	return nil, nil
+}
+func (a *testArtifactWithConfigMediaType) LayerByDiffID(oci.Hash) (oci.Layer, error) {
+	return nil, nil
 }
 
 func TestValidatePathWithinDirectory_RealFilesystem(t *testing.T) {

@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/docker/model-runner/pkg/distribution/modelpack"
 	"github.com/docker/model-runner/pkg/distribution/oci"
 	"github.com/docker/model-runner/pkg/distribution/types"
 )
@@ -19,7 +20,7 @@ import (
 //   - V0.1 (legacy): Uses the original unpacking logic based on GGUFPaths(), SafetensorsPaths(), etc.
 func Unpack(dir string, model types.Model) (*Bundle, error) {
 	artifact, isArtifact := model.(types.ModelArtifact)
-	if isArtifact && isV02Model(artifact) {
+	if isArtifact && (isV02Model(artifact) || isCNCFModel(artifact)) {
 		return UnpackFromLayers(dir, artifact)
 	}
 
@@ -35,6 +36,17 @@ func isV02Model(model types.ModelArtifact) bool {
 		return false
 	}
 	return manifest.Config.MediaType == types.MediaTypeModelConfigV02
+}
+
+// isCNCFModel checks if the model was packaged using the CNCF ModelPack format.
+// CNCF ModelPack uses a layer-per-file approach with filepath annotations,
+// similar to V0.2, so it can be unpacked using UnpackFromLayers.
+func isCNCFModel(model types.ModelArtifact) bool {
+	manifest, err := model.Manifest()
+	if err != nil {
+		return false
+	}
+	return manifest.Config.MediaType == modelpack.MediaTypeModelConfigV1
 }
 
 // unpackLegacy is the original V0.1 unpacking logic that uses model.GGUFPaths(), model.SafetensorsPaths(), etc.
@@ -634,6 +646,13 @@ func UnpackFromLayers(dir string, model types.ModelArtifact) (*Bundle, error) {
 		return nil, fmt.Errorf("get model layers: %w", err)
 	}
 
+	// Determine the model format from config for resolving format-agnostic
+	// CNCF weight types (e.g., MediaTypeWeightRaw).
+	var modelFormat string
+	if cfg, err := model.Config(); err == nil {
+		modelFormat = string(cfg.GetFormat())
+	}
+
 	// Define the interface for getting descriptor with annotations
 	type descriptorProvider interface {
 		GetDescriptor() oci.Descriptor
@@ -658,9 +677,12 @@ func UnpackFromLayers(dir string, model types.ModelArtifact) (*Bundle, error) {
 			continue
 		}
 
-		// Validate the path to prevent directory traversal
+		// Validate the path to prevent directory traversal.
+		// Some packaging tools (e.g., modctl) may produce annotations with
+		// ".." components when the model was packaged using an absolute path.
+		// In that case, fall back to just the filename to safely extract the file.
 		if err := validatePathWithinDirectory(modelDir, relPath); err != nil {
-			return nil, fmt.Errorf("invalid filepath annotation %q: %w", relPath, err)
+			relPath = filepath.Base(relPath)
 		}
 
 		// Convert forward slashes to OS-specific separator
@@ -683,7 +705,7 @@ func UnpackFromLayers(dir string, model types.ModelArtifact) (*Bundle, error) {
 		}
 
 		// Update bundle tracking fields
-		updateBundleFieldsFromLayer(bundle, mediaType, relPath)
+		updateBundleFieldsFromLayer(bundle, mediaType, relPath, modelFormat)
 	}
 
 	// Create the runtime config
@@ -710,14 +732,16 @@ func unpackLayerToFile(destPath string, layer oci.Layer) error {
 }
 
 // updateBundleFieldsFromLayer updates the bundle tracking fields based on the unpacked layer.
-func updateBundleFieldsFromLayer(bundle *Bundle, mediaType oci.MediaType, relPath string) {
+// modelFormat is used to resolve format-agnostic CNCF weight types (e.g., MediaTypeWeightRaw)
+// to the correct bundle field. Pass empty string when the model format is unknown.
+func updateBundleFieldsFromLayer(bundle *Bundle, mediaType oci.MediaType, relPath string, modelFormat string) {
 	//nolint:exhaustive // only tracking specific model-related media types
 	switch mediaType {
-	case types.MediaTypeGGUF:
+	case types.MediaTypeGGUF, modelpack.MediaTypeWeightGGUF:
 		if bundle.ggufFile == "" {
 			bundle.ggufFile = relPath
 		}
-	case types.MediaTypeSafetensors:
+	case types.MediaTypeSafetensors, modelpack.MediaTypeWeightSafetensors:
 		if bundle.safetensorsFile == "" {
 			bundle.safetensorsFile = relPath
 		}
@@ -732,6 +756,20 @@ func updateBundleFieldsFromLayer(bundle *Bundle, mediaType oci.MediaType, relPat
 	case types.MediaTypeChatTemplate:
 		if bundle.chatTemplatePath == "" {
 			bundle.chatTemplatePath = relPath
+		}
+	default:
+		// Handle format-agnostic CNCF weight types (e.g., .raw) by checking the model config format.
+		if modelpack.IsModelPackGenericWeightMediaType(string(mediaType)) {
+			switch types.Format(modelFormat) {
+			case types.FormatGGUF:
+				if bundle.ggufFile == "" {
+					bundle.ggufFile = relPath
+				}
+			case types.FormatSafetensors:
+				if bundle.safetensorsFile == "" {
+					bundle.safetensorsFile = relPath
+				}
+			}
 		}
 	}
 }
