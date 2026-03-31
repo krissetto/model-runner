@@ -109,6 +109,22 @@ func TestValidatePathWithinDirectory(t *testing.T) {
 			expectError: false,
 			description: "Directory path with trailing slash should be valid",
 		},
+
+		// Edge cases for filepath.Base sanitization (re-validation after fallback)
+		// filepath.Base("foo/..") returns ".." which must be rejected
+		{
+			name:        "filepath.Base returns dotdot",
+			targetPath:  "..",
+			expectError: true,
+			description: "Double dot (filepath.Base output for 'foo/..') should be blocked",
+		},
+		// filepath.Base("/") returns "/" which must be rejected
+		{
+			name:        "filepath.Base returns slash",
+			targetPath:  "/",
+			expectError: true,
+			description: "Slash (filepath.Base output for '/') should be blocked as absolute path",
+		},
 	}
 
 	for _, tt := range tests {

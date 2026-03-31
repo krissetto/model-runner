@@ -682,7 +682,13 @@ func UnpackFromLayers(dir string, model types.ModelArtifact) (*Bundle, error) {
 		// ".." components when the model was packaged using an absolute path.
 		// In that case, fall back to just the filename to safely extract the file.
 		if err := validatePathWithinDirectory(modelDir, relPath); err != nil {
-			relPath = filepath.Base(relPath)
+			sanitizedPath := filepath.Base(relPath)
+			// Re-validate the sanitized path to prevent directory traversal attacks.
+			// filepath.Base can return unsafe values like ".", "..", or "/".
+			if err2 := validatePathWithinDirectory(modelDir, sanitizedPath); err2 != nil {
+				return nil, fmt.Errorf("invalid filepath annotation %q could not be sanitized: %w", relPath, err)
+			}
+			relPath = sanitizedPath
 		}
 
 		// Convert forward slashes to OS-specific separator
