@@ -722,7 +722,13 @@ func UnpackFromLayers(dir string, model types.ModelArtifact) (*Bundle, error) {
 			sanitizedPath := sanitizeRelativePath(relPath)
 			// Re-validate the sanitized path to ensure it's safe.
 			if err2 := validatePathWithinDirectory(modelDir, sanitizedPath); err2 != nil {
-				return nil, fmt.Errorf("invalid filepath annotation %q could not be sanitized: %w", relPath, err)
+				return nil, fmt.Errorf(
+					"invalid filepath annotation %q (sanitized as %q): original error: %w, sanitized error: %w",
+					relPath,
+					sanitizedPath,
+					err,
+					err2,
+				)
 			}
 			relPath = sanitizedPath
 		}

@@ -541,6 +541,46 @@ func TestUnpackFromLayers_DuplicateRawAnnotationAllowed(t *testing.T) {
 	}
 }
 
+func TestUnpackFromLayers_PathSanitizationRejectsCollapsedPath(t *testing.T) {
+	// Build a ModelPack artifact whose annotation collapses entirely during
+	// sanitization. This must fail before any file is written.
+	artifact := testutil.NewModelPackArtifact(
+		t,
+		modelpack.Model{
+			Config: modelpack.ModelConfig{Format: string(types.FormatGGUF)},
+		},
+		testutil.LayerSpec{
+			Path:         filepath.Join("..", "..", "assets", "dummy.gguf"),
+			RelativePath: "../../..",
+			MediaType:    oci.MediaType(modelpack.MediaTypeWeightGGUF),
+		},
+	)
+
+	bundleRoot := t.TempDir()
+	_, err := UnpackFromLayers(bundleRoot, artifact)
+	if err == nil {
+		t.Fatal("Expected sanitization error, got nil")
+	}
+	if !strings.Contains(err.Error(), `invalid filepath annotation "../../.."`) {
+		t.Fatalf("Expected error to mention original annotation, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), `sanitized as ""`) {
+		t.Fatalf("Expected error to mention sanitized path, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "empty path is not allowed") {
+		t.Fatalf("Expected error to mention sanitized validation failure, got: %v", err)
+	}
+
+	modelDir := filepath.Join(bundleRoot, ModelSubdir)
+	entries, readErr := os.ReadDir(modelDir)
+	if readErr != nil {
+		t.Fatalf("Expected model directory to exist, got: %v", readErr)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("Expected no files to be written for rejected annotation, got %d entries", len(entries))
+	}
+}
+
 func TestValidatePathWithinDirectory_RealFilesystem(t *testing.T) {
 	// Create a temporary directory structure
 	baseDir := t.TempDir()
