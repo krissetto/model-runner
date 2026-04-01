@@ -24,7 +24,7 @@ func runEditor(content string, defaultEditor string) (string, error) {
 		editor = defaultEditor
 	}
 
-	// handle for env varibles set with args
+	// handle for env variables set with args
 	parts := strings.Fields(editor)
 	args := append(parts[1:], tmpFile.Name())
 	cmd := exec.Command(parts[0], args...)
