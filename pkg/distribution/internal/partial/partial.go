@@ -238,7 +238,6 @@ func matchesMediaType(layerMT, targetMT oci.MediaType, modelFormat string) bool 
 	}
 
 	// Native ModelPack support: check format-specific ModelPack types
-	//nolint:exhaustive // Only GGUF and Safetensors need cross-format matching
 	switch targetMT {
 	case types.MediaTypeGGUF:
 		if layerMT == modelpack.MediaTypeWeightGGUF {
@@ -248,6 +247,15 @@ func matchesMediaType(layerMT, targetMT oci.MediaType, modelFormat string) bool 
 		if layerMT == modelpack.MediaTypeWeightSafetensors {
 			return true
 		}
+	case types.MediaTypeDDUF, types.MediaTypeLicense, types.MediaTypeMultimodalProjector,
+		types.MediaTypeChatTemplate, types.MediaTypeModelFile, types.MediaTypeVLLMConfigArchive,
+		types.MediaTypeDirTar, types.MediaTypeModelConfigV01, types.MediaTypeModelConfigV02,
+		oci.OCIManifestSchema1, oci.OCIImageIndex, oci.OCIConfigJSON,
+		oci.OCILayer, oci.OCILayerGzip, oci.OCILayerZstd,
+		oci.OCIContentDescriptor, oci.OCIArtifactManifest, oci.OCIEmptyJSON,
+		oci.DockerManifestSchema2, oci.DockerManifestList, oci.DockerConfigJSON,
+		oci.DockerLayer, oci.DockerForeignLayer, oci.DockerUncompressedLayer:
+		// No format-specific ModelPack mapping for these media types
 	}
 
 	// ModelPack model-spec support: format-agnostic weight types (.raw, .tar, etc.)
@@ -256,7 +264,6 @@ func matchesMediaType(layerMT, targetMT oci.MediaType, modelFormat string) bool 
 	// in their media type and are handled above; applying this fallback to them would
 	// cause cross-format false positives (e.g., safetensors layer matching as GGUF).
 	if modelFormat != "" && modelpack.IsModelPackGenericWeightMediaType(string(layerMT)) {
-		//nolint:exhaustive // Only weight formats need cross-format matching
 		switch targetMT {
 		case types.MediaTypeGGUF:
 			return modelFormat == string(types.FormatGGUF)
@@ -264,6 +271,15 @@ func matchesMediaType(layerMT, targetMT oci.MediaType, modelFormat string) bool 
 			return modelFormat == string(types.FormatSafetensors)
 		case types.MediaTypeDDUF:
 			return modelFormat == string(types.FormatDDUF) || modelFormat == string(types.FormatDiffusers) //nolint:staticcheck // FormatDiffusers kept for backward compatibility
+		case types.MediaTypeLicense, types.MediaTypeMultimodalProjector,
+			types.MediaTypeChatTemplate, types.MediaTypeModelFile, types.MediaTypeVLLMConfigArchive,
+			types.MediaTypeDirTar, types.MediaTypeModelConfigV01, types.MediaTypeModelConfigV02,
+			oci.OCIManifestSchema1, oci.OCIImageIndex, oci.OCIConfigJSON,
+			oci.OCILayer, oci.OCILayerGzip, oci.OCILayerZstd,
+			oci.OCIContentDescriptor, oci.OCIArtifactManifest, oci.OCIEmptyJSON,
+			oci.DockerManifestSchema2, oci.DockerManifestList, oci.DockerConfigJSON,
+			oci.DockerLayer, oci.DockerForeignLayer, oci.DockerUncompressedLayer:
+			// No generic weight resolution for these media types
 		}
 	}
 
