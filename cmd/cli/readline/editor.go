@@ -10,7 +10,7 @@ import (
 
 const (
 	defaultEditor = "vi"
-	defaultShell  = "/bin/bash"
+	defaultShell  = "/bin/sh"
 	windowsEditor = "notepad"
 	windowsShell  = "cmd"
 )
