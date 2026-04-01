@@ -37,6 +37,18 @@ func TestRunEditor(t *testing.T) {
 			input:            "",
 			expected:         "new content",
 		},
+		{
+			name:             "strips trailing newline",
+			mockEditorScript: `printf "edited\n" > "$1"`,
+			input:            "",
+			expected:         "edited",
+		},
+		{
+			name:             "strips trailing carriage return and newline",
+			mockEditorScript: `printf "edited\r\n" > "$1"`,
+			input:            "",
+			expected:         "edited",
+		},
 	}
 
 	for _, tt := range tests {

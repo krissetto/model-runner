@@ -30,7 +30,9 @@ func runEditor(content string, defaultEditor string) (string, error) {
 		return content, err
 	}
 
-	return string(edited), nil
+	result := strings.TrimRight(string(edited), "\r\n")
+
+	return result, nil
 }
 
 func buildEditorCmd(defaultEditor string, filePath string) *exec.Cmd {
@@ -41,9 +43,7 @@ func buildEditorCmd(defaultEditor string, filePath string) *exec.Cmd {
 
 	var cmd *exec.Cmd
 	if runtime.GOOS == "windows" {
-		parts := strings.Fields(editor)
-		args := append(parts[1:], filePath)
-		cmd = exec.Command(parts[0], args...)
+		cmd = exec.Command("cmd", "/C", editor+" \""+filePath+"\"")
 	} else {
 		cmd = exec.Command("sh", "-c", editor+" \"$1\"", "--", filePath)
 	}
