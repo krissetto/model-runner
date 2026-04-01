@@ -82,7 +82,8 @@ func buildEditorCmd(filePath string) *exec.Cmd {
 		args = append(args, filePath)
 	}
 
-	cmd := exec.Command(args[0], args[1:]...) //nolint:gosec // $EDITOR is a user-controlled local env var, same trust model as git/kubectl
+	//nolint:gosec // $EDITOR is a user-controlled local env var, same trust model as git/kubectl
+	cmd := exec.Command(args[0], args[1:]...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
