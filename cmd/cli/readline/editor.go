@@ -57,8 +57,7 @@ func buildEditorCmd(filePath string) *exec.Cmd {
 
 	if shell {
 		// The editor string is the last element — append the file path to it
-		// so the shell interprets the full command.
-		args[len(args)-1] = fmt.Sprintf("%s %s", args[len(args)-1], filePath)
+		args[len(args)-1] = fmt.Sprintf("%s '%s'", args[len(args)-1], filePath)
 	} else {
 		args = append(args, filePath)
 	}
