@@ -3,6 +3,7 @@ package readline
 import (
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 )
 
@@ -19,18 +20,7 @@ func runEditor(content string, defaultEditor string) (string, error) {
 	}
 	tmpFile.Close()
 
-	editor := strings.TrimSpace(os.Getenv("EDITOR"))
-	if editor == "" {
-		editor = defaultEditor
-	}
-
-	// handle for env variables set with args
-	parts := strings.Fields(editor)
-	args := append(parts[1:], tmpFile.Name())
-	cmd := exec.Command(parts[0], args...)
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	cmd := buildEditorCmd(defaultEditor, tmpFile.Name())
 	if err := cmd.Run(); err != nil {
 		return content, err
 	}
@@ -41,4 +31,24 @@ func runEditor(content string, defaultEditor string) (string, error) {
 	}
 
 	return string(edited), nil
+}
+
+func buildEditorCmd(defaultEditor string, filePath string) *exec.Cmd {
+	editor := strings.TrimSpace(os.Getenv("EDITOR"))
+	if editor == "" {
+		editor = defaultEditor
+	}
+
+	var cmd *exec.Cmd
+	if runtime.GOOS == "windows" {
+		parts := strings.Fields(editor)
+		args := append(parts[1:], filePath)
+		cmd = exec.Command(parts[0], args...)
+	} else {
+		cmd = exec.Command("sh", "-c", editor+" \"$1\"", "--", filePath)
+	}
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd
 }

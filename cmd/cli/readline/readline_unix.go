@@ -26,13 +26,15 @@ func openInEditor(fd uintptr, termios any, content string) (string, error) {
 	}
 
 	edited, err := runEditor(content, "vi")
-	if err != nil {
-		SetRawMode(fd)
-		return content, err
+
+	// Always restore raw mode using the original termios, whether the editor
+	// succeeded or failed, so the terminal returns to its previous configuration.
+	if _, restoreErr := SetRawMode(fd); restoreErr != nil {
+		return content, restoreErr
 	}
 
-	if _, err := SetRawMode(fd); err != nil {
-		return edited, err
+	if err != nil {
+		return content, err
 	}
 
 	return edited, nil

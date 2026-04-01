@@ -132,7 +132,7 @@ func generateInteractiveWithReadline(cmd *cobra.Command, desktopClient *desktop.
 		fmt.Fprintln(os.Stderr, "  Ctrl + w            Delete the word before the cursor")
 		fmt.Fprintln(os.Stderr, "")
 		fmt.Fprintln(os.Stderr, "  Ctrl + l            Clear the screen")
-		fmt.Fprintln(os.Stderr, "  Ctrl + x            Open prompt in default system text editor")
+		fmt.Fprintln(os.Stderr, "  Ctrl + x            Open prompt in text editor ($EDITOR)")
 		fmt.Fprintln(os.Stderr, "  Ctrl + c            Stop the model from responding")
 		fmt.Fprintln(os.Stderr, "  Ctrl + d            Exit (/bye)")
 		fmt.Fprintln(os.Stderr, "")
