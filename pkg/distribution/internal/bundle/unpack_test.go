@@ -1,6 +1,7 @@
 package bundle
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -201,6 +202,13 @@ func TestUpdateBundleFieldsFromLayer_CNCFMediaTypes(t *testing.T) {
 			expectSafetensors: "",
 			expectGGUF:        "",
 		},
+		{
+			name:        "CNCF generic weight raw with DDUF format",
+			mediaType:   oci.MediaType(modelpack.MediaTypeWeightRaw),
+			relPath:     "model/model.dduf",
+			modelFormat: string(types.FormatDDUF),
+			expectGGUF:  "",
+		},
 	}
 
 	for _, tt := range tests {
@@ -213,6 +221,9 @@ func TestUpdateBundleFieldsFromLayer_CNCFMediaTypes(t *testing.T) {
 			}
 			if bundle.ggufFile != tt.expectGGUF {
 				t.Errorf("ggufFile = %q, want %q", bundle.ggufFile, tt.expectGGUF)
+			}
+			if tt.modelFormat == string(types.FormatDDUF) && bundle.ddufFile != tt.relPath {
+				t.Errorf("ddufFile = %q, want %q", bundle.ddufFile, tt.relPath)
 			}
 		})
 	}
@@ -294,6 +305,112 @@ func (a *testArtifactWithConfigMediaType) LayerByDigest(oci.Hash) (oci.Layer, er
 }
 func (a *testArtifactWithConfigMediaType) LayerByDiffID(oci.Hash) (oci.Layer, error) {
 	return nil, nil
+}
+
+// testLayerWithAnnotation is a minimal oci.Layer that carries a specific media
+// type and a filepath annotation. Used to test inferFormatFromLayerAnnotations.
+type testLayerWithAnnotation struct {
+	mediaType  oci.MediaType
+	annotation string
+}
+
+func (l *testLayerWithAnnotation) MediaType() (oci.MediaType, error) { return l.mediaType, nil }
+func (l *testLayerWithAnnotation) GetDescriptor() oci.Descriptor {
+	annotations := map[string]string{}
+	if l.annotation != "" {
+		annotations[types.AnnotationFilePath] = l.annotation
+	}
+	return oci.Descriptor{MediaType: l.mediaType, Annotations: annotations}
+}
+
+// Stubs to satisfy oci.Layer interface.
+func (l *testLayerWithAnnotation) Digest() (oci.Hash, error)            { return oci.Hash{}, nil }
+func (l *testLayerWithAnnotation) DiffID() (oci.Hash, error)            { return oci.Hash{}, nil }
+func (l *testLayerWithAnnotation) Compressed() (io.ReadCloser, error)   { return nil, nil }
+func (l *testLayerWithAnnotation) Uncompressed() (io.ReadCloser, error) { return nil, nil }
+func (l *testLayerWithAnnotation) Size() (int64, error)                 { return 0, nil }
+
+func TestInferFormatFromLayerAnnotations(t *testing.T) {
+	tests := []struct {
+		name     string
+		layers   []oci.Layer
+		expected string
+	}{
+		{
+			name: "GGUF via MediaTypeWeightRaw annotation",
+			layers: []oci.Layer{
+				&testLayerWithAnnotation{
+					mediaType:  oci.MediaType(modelpack.MediaTypeWeightRaw),
+					annotation: "model.gguf",
+				},
+			},
+			expected: string(types.FormatGGUF),
+		},
+		{
+			name: "safetensors via MediaTypeWeightRaw annotation",
+			layers: []oci.Layer{
+				&testLayerWithAnnotation{
+					mediaType:  oci.MediaType(modelpack.MediaTypeWeightRaw),
+					annotation: "model.safetensors",
+				},
+			},
+			expected: string(types.FormatSafetensors),
+		},
+		{
+			name: "DDUF via MediaTypeWeightRaw annotation",
+			layers: []oci.Layer{
+				&testLayerWithAnnotation{
+					mediaType:  oci.MediaType(modelpack.MediaTypeWeightRaw),
+					annotation: "model.dduf",
+				},
+			},
+			expected: string(types.FormatDDUF),
+		},
+		{
+			name: "no weight layers returns empty",
+			layers: []oci.Layer{
+				&testLayerWithAnnotation{
+					mediaType:  "application/json",
+					annotation: "config.json",
+				},
+			},
+			expected: "",
+		},
+		{
+			name:     "empty layers returns empty",
+			layers:   []oci.Layer{},
+			expected: "",
+		},
+		{
+			name: "weight layer without annotation returns empty",
+			layers: []oci.Layer{
+				&testLayerWithAnnotation{
+					mediaType:  oci.MediaType(modelpack.MediaTypeWeightRaw),
+					annotation: "",
+				},
+			},
+			expected: "",
+		},
+		{
+			name: "GGUF via MediaTypeWeightGGUF annotation",
+			layers: []oci.Layer{
+				&testLayerWithAnnotation{
+					mediaType:  oci.MediaType(modelpack.MediaTypeWeightGGUF),
+					annotation: "model.gguf",
+				},
+			},
+			expected: string(types.FormatGGUF),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := inferFormatFromLayerAnnotations(tt.layers)
+			if got != tt.expected {
+				t.Errorf("inferFormatFromLayerAnnotations() = %q, want %q", got, tt.expected)
+			}
+		})
+	}
 }
 
 func TestValidatePathWithinDirectory_RealFilesystem(t *testing.T) {

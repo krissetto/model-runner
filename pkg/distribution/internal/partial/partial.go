@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/docker/model-runner/pkg/distribution/files"
 	"github.com/docker/model-runner/pkg/distribution/modelpack"
 	"github.com/docker/model-runner/pkg/distribution/oci"
 	"github.com/docker/model-runner/pkg/distribution/types"
@@ -143,15 +144,59 @@ func ConfigArchivePath(i WithLayers) (string, error) {
 	return paths[0], err
 }
 
-// getModelFormat reads the model config and returns the format string (e.g., "gguf", "safetensors").
-// This is used to resolve format-agnostic ModelPack weight media types (e.g., .raw, .tar)
-// to specific model formats. Returns empty string if format cannot be determined.
+// getModelFormat reads the model config and returns the format string (e.g.,
+// "gguf", "safetensors"). Used to resolve format-agnostic ModelPack weight
+// media types (e.g., .raw). Falls back to inspecting layer filepath
+// annotations when the config omits the format field. Returns empty string if
+// format cannot be determined.
 func getModelFormat(i WithLayers) string {
 	cfg, err := Config(i)
+	if err == nil {
+		if f := string(cfg.GetFormat()); f != "" {
+			return f
+		}
+	}
+	// Config did not specify a format; infer from filepath annotations.
+	return inferFormatFromAnnotations(i)
+}
+
+// inferFormatFromAnnotations scans weight layers for a filepath annotation and
+// uses the file extension to determine the model format. This handles CNCF
+// ModelPack models that use MediaTypeWeightRaw but omit config.format.
+func inferFormatFromAnnotations(i WithLayers) string {
+	layers, err := i.Layers()
 	if err != nil {
 		return ""
 	}
-	return string(cfg.GetFormat())
+	type descriptorProvider interface {
+		GetDescriptor() oci.Descriptor
+	}
+	for _, l := range layers {
+		mt, err := l.MediaType()
+		if err != nil || !modelpack.IsModelPackWeightMediaType(string(mt)) {
+			continue
+		}
+		dp, ok := l.(descriptorProvider)
+		if !ok {
+			continue
+		}
+		fp, exists := dp.GetDescriptor().Annotations[types.AnnotationFilePath]
+		if !exists || fp == "" {
+			continue
+		}
+		// Use file classification to detect format from extension.
+		switch files.Classify(fp) {
+		case files.FileTypeGGUF:
+			return string(types.FormatGGUF)
+		case files.FileTypeSafetensors:
+			return string(types.FormatSafetensors)
+		case files.FileTypeDDUF:
+			return string(types.FormatDDUF)
+		case files.FileTypeUnknown, files.FileTypeConfig, files.FileTypeLicense, files.FileTypeChatTemplate:
+			// Not a weight file; skip.
+		}
+	}
+	return ""
 }
 
 // layerPathsByMediaType is a generic helper function that finds a layer by media type and returns its path.

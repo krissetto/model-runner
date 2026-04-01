@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/docker/model-runner/pkg/distribution/files"
 	"github.com/docker/model-runner/pkg/distribution/modelpack"
 	"github.com/docker/model-runner/pkg/distribution/oci"
 	"github.com/docker/model-runner/pkg/distribution/types"
@@ -652,6 +653,11 @@ func UnpackFromLayers(dir string, model types.ModelArtifact) (*Bundle, error) {
 	if cfg, err := model.Config(); err == nil {
 		modelFormat = string(cfg.GetFormat())
 	}
+	// When the config omits the format field, infer it from filepath
+	// annotations on weight layers (e.g., ".gguf" → FormatGGUF).
+	if modelFormat == "" {
+		modelFormat = inferFormatFromLayerAnnotations(layers)
+	}
 
 	// Define the interface for getting descriptor with annotations
 	type descriptorProvider interface {
@@ -737,6 +743,42 @@ func unpackLayerToFile(destPath string, layer oci.Layer) error {
 	return fmt.Errorf("layer is not a path provider")
 }
 
+// inferFormatFromLayerAnnotations inspects filepath annotations on weight
+// layers to determine the model format when config.format is not set. This
+// handles CNCF ModelPack models that use MediaTypeWeightRaw but omit the
+// format field.
+func inferFormatFromLayerAnnotations(layers []oci.Layer) string {
+	type descriptorProvider interface {
+		GetDescriptor() oci.Descriptor
+	}
+	for _, l := range layers {
+		mt, err := l.MediaType()
+		if err != nil || !modelpack.IsModelPackWeightMediaType(string(mt)) {
+			continue
+		}
+		dp, ok := l.(descriptorProvider)
+		if !ok {
+			continue
+		}
+		fp, exists := dp.GetDescriptor().Annotations[types.AnnotationFilePath]
+		if !exists || fp == "" {
+			continue
+		}
+		// Use file classification to detect format from extension.
+		switch files.Classify(fp) {
+		case files.FileTypeGGUF:
+			return string(types.FormatGGUF)
+		case files.FileTypeSafetensors:
+			return string(types.FormatSafetensors)
+		case files.FileTypeDDUF:
+			return string(types.FormatDDUF)
+		case files.FileTypeUnknown, files.FileTypeConfig, files.FileTypeLicense, files.FileTypeChatTemplate:
+			// Not a weight file; skip.
+		}
+	}
+	return ""
+}
+
 // updateBundleFieldsFromLayer updates the bundle tracking fields based on the unpacked layer.
 // modelFormat is used to resolve format-agnostic CNCF weight types (e.g., MediaTypeWeightRaw)
 // to the correct bundle field. Pass empty string when the model format is unknown.
@@ -774,6 +816,10 @@ func updateBundleFieldsFromLayer(bundle *Bundle, mediaType oci.MediaType, relPat
 			case types.FormatSafetensors:
 				if bundle.safetensorsFile == "" {
 					bundle.safetensorsFile = relPath
+				}
+			case types.FormatDDUF, types.FormatDiffusers: //nolint:staticcheck // FormatDiffusers kept for backward compatibility
+				if bundle.ddufFile == "" {
+					bundle.ddufFile = relPath
 				}
 			}
 		}
