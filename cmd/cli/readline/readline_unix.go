@@ -3,7 +3,6 @@
 package readline
 
 import (
-	"errors"
 	"syscall"
 )
 
@@ -17,24 +16,4 @@ func handleCharCtrlZ(fd uintptr, termios any) (string, error) {
 
 	// on resume...
 	return "", nil
-}
-
-func openInEditor(fd uintptr, termios any, content string) (string, error) {
-	t := termios.(*Termios)
-
-	if err := UnsetRawMode(fd, t); err != nil {
-		return content, err
-	}
-
-	edited, err := runEditor(content)
-
-	if _, restoreErr := SetRawMode(fd); restoreErr != nil {
-		return content, errors.Join(err, restoreErr)
-	}
-
-	if err != nil {
-		return content, err
-	}
-
-	return edited, nil
 }

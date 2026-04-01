@@ -1,6 +1,7 @@
 package readline
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -15,6 +16,24 @@ const (
 	windowsShell  = "cmd"
 )
 
+func openInEditor(fd uintptr, termios any, content string) (string, error) {
+	if err := UnsetRawMode(fd, termios); err != nil {
+		return content, err
+	}
+
+	edited, err := runEditor(content)
+
+	if _, restoreErr := SetRawMode(fd); restoreErr != nil {
+		return content, errors.Join(err, restoreErr)
+	}
+
+	if err != nil {
+		return content, err
+	}
+
+	return edited, nil
+}
+
 func platformize(linux, windows string) string {
 	if runtime.GOOS == "windows" {
 		return windows
@@ -24,7 +43,7 @@ func platformize(linux, windows string) string {
 
 func defaultEnvShell() []string {
 	shell := os.Getenv("SHELL")
-	if len(shell) == 0 {
+	if shell == "" {
 		shell = platformize(defaultShell, windowsShell)
 	}
 	flag := "-c"
@@ -36,7 +55,7 @@ func defaultEnvShell() []string {
 
 func resolveEditor() ([]string, bool) {
 	editor := strings.TrimSpace(os.Getenv("EDITOR"))
-	if len(editor) == 0 {
+	if editor == "" {
 		editor = platformize(defaultEditor, windowsEditor)
 	}
 
@@ -57,12 +76,13 @@ func buildEditorCmd(filePath string) *exec.Cmd {
 
 	if shell {
 		// The editor string is the last element — append the file path to it
-		args[len(args)-1] = fmt.Sprintf("%s '%s'", args[len(args)-1], filePath)
+		safeFilePath := strings.ReplaceAll(filePath, "'", "'\\''")
+		args[len(args)-1] = fmt.Sprintf("%s '%s'", args[len(args)-1], safeFilePath)
 	} else {
 		args = append(args, filePath)
 	}
 
-	cmd := exec.Command(args[0], args[1:]...)
+	cmd := exec.Command(args[0], args[1:]...) //nolint:gosec // $EDITOR is a user-controlled local env var, same trust model as git/kubectl
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -76,7 +96,7 @@ func runEditor(content string) (string, error) {
 	}
 	defer os.Remove(tmpFile.Name())
 
-	if _, err := tmpFile.Write([]byte(content)); err != nil {
+	if _, err := tmpFile.WriteString(content); err != nil {
 		tmpFile.Close()
 		return content, err
 	}
