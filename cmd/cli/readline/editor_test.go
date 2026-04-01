@@ -55,7 +55,7 @@ func TestRunEditor(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			createMockEditor(t, tt.mockEditorScript)
 
-			result, err := runEditor(tt.input, "vi")
+			result, err := runEditor(tt.input)
 			if err != nil {
 				t.Fatalf("runEditor failed: %v", err)
 			}
@@ -71,7 +71,7 @@ func TestRunEditorReturnsOriginalContentOnFailure(t *testing.T) {
 	t.Setenv("EDITOR", "non_exists_editor")
 
 	content := "docker model prompt hello"
-	result, err := runEditor(content, "vi")
+	result, err := runEditor(content)
 	if err == nil {
 		t.Fatal("expected error from nonexistent editor")
 	}
@@ -85,7 +85,7 @@ func TestRunEditorWithEditorArgs(t *testing.T) {
 	editorScript := createMockEditor(t, `printf "edited with args" > "$2"`)
 	t.Setenv("EDITOR", editorScript+" --wait")
 
-	result, err := runEditor("original", "vi")
+	result, err := runEditor("original")
 	if err != nil {
 		t.Fatalf("runEditor failed: %v", err)
 	}

@@ -12,10 +12,8 @@ func openInEditor(fd uintptr, termios any, content string) (string, error) {
 		return content, err
 	}
 
-	edited, err := runEditor(content, "notepad")
+	edited, err := runEditor(content)
 
-	// Always restore raw mode using the original state, whether the editor
-	// succeeded or failed, so the terminal returns to its previous configuration.
 	if _, restoreErr := SetRawMode(fd); restoreErr != nil {
 		return content, restoreErr
 	}
