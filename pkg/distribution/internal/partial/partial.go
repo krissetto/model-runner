@@ -126,7 +126,7 @@ func SafetensorsPaths(i WithLayers) ([]string, error) {
 }
 
 func DDUFPaths(i WithLayers) ([]string, error) {
-	return layerPathsByMediaType(i, types.MediaTypeDDUF, "")
+	return layerPathsByMediaType(i, types.MediaTypeDDUF, getModelFormat(i))
 }
 
 func ConfigArchivePath(i WithLayers) (string, error) {
@@ -256,12 +256,14 @@ func matchesMediaType(layerMT, targetMT oci.MediaType, modelFormat string) bool 
 	// in their media type and are handled above; applying this fallback to them would
 	// cause cross-format false positives (e.g., safetensors layer matching as GGUF).
 	if modelFormat != "" && modelpack.IsModelPackGenericWeightMediaType(string(layerMT)) {
-		//nolint:exhaustive // Only GGUF and Safetensors need cross-format matching
+		//nolint:exhaustive // Only weight formats need cross-format matching
 		switch targetMT {
 		case types.MediaTypeGGUF:
 			return modelFormat == string(types.FormatGGUF)
 		case types.MediaTypeSafetensors:
 			return modelFormat == string(types.FormatSafetensors)
+		case types.MediaTypeDDUF:
+			return modelFormat == string(types.FormatDDUF) || modelFormat == string(types.FormatDiffusers) //nolint:staticcheck // FormatDiffusers kept for backward compatibility
 		}
 	}
 

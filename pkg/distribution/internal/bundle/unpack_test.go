@@ -4,8 +4,10 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/docker/model-runner/pkg/distribution/internal/testutil"
 	"github.com/docker/model-runner/pkg/distribution/modelpack"
 	"github.com/docker/model-runner/pkg/distribution/oci"
 	"github.com/docker/model-runner/pkg/distribution/types"
@@ -410,6 +412,132 @@ func TestInferFormatFromLayerAnnotations(t *testing.T) {
 				t.Errorf("inferFormatFromLayerAnnotations() = %q, want %q", got, tt.expected)
 			}
 		})
+	}
+}
+
+func TestSanitizeRelativePath(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "no leading dotdot",
+			input:    "text_encoder/model.safetensors",
+			expected: "text_encoder/model.safetensors",
+		},
+		{
+			name:     "single leading dotdot",
+			input:    "../model.gguf",
+			expected: "model.gguf",
+		},
+		{
+			name:     "multiple leading dotdots",
+			input:    "../../home/user/text_encoder/model.safetensors",
+			expected: "home/user/text_encoder/model.safetensors",
+		},
+		{
+			name:     "deep leading dotdots preserving nested dirs",
+			input:    "../../../a/b/c/model.safetensors",
+			expected: "a/b/c/model.safetensors",
+		},
+		{
+			name:     "only dotdot",
+			input:    "..",
+			expected: "",
+		},
+		{
+			name:     "simple filename",
+			input:    "model.gguf",
+			expected: "model.gguf",
+		},
+		{
+			name:     "dotdot in middle is resolved by Clean",
+			input:    "a/../b/model.safetensors",
+			expected: "b/model.safetensors",
+		},
+		{
+			name:     "trailing slash stripped by Clean",
+			input:    "../models/",
+			expected: "models",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := sanitizeRelativePath(tt.input)
+			if got != tt.expected {
+				t.Errorf("sanitizeRelativePath(%q) = %q, want %q", tt.input, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestUnpackFromLayers_PathCollisionAfterSanitization(t *testing.T) {
+	// Build a ModelPack artifact where two distinct raw annotations collapse to
+	// the same sanitized destination path.
+	artifact := testutil.NewModelPackArtifact(
+		t,
+		modelpack.Model{
+			Config: modelpack.ModelConfig{Format: string(types.FormatGGUF)},
+		},
+		testutil.LayerSpec{
+			Path:         filepath.Join("..", "..", "assets", "dummy.gguf"),
+			RelativePath: "foo/model.gguf",
+			MediaType:    oci.MediaType(modelpack.MediaTypeWeightGGUF),
+		},
+		testutil.LayerSpec{
+			Path:         filepath.Join("..", "..", "assets", "dummy.gguf"),
+			RelativePath: "../foo/model.gguf",
+			MediaType:    oci.MediaType(modelpack.MediaTypeWeightGGUF),
+		},
+	)
+
+	_, err := UnpackFromLayers(t.TempDir(), artifact)
+	if err == nil {
+		t.Fatal("Expected unpack collision error, got nil")
+	}
+	if !strings.Contains(err.Error(), "filepath collision") {
+		t.Fatalf("Expected collision error, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "foo/model.gguf") {
+		t.Fatalf("Expected collision error to mention original annotation, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "../foo/model.gguf") {
+		t.Fatalf("Expected collision error to mention sanitized annotation, got: %v", err)
+	}
+}
+
+func TestUnpackFromLayers_DuplicateRawAnnotationAllowed(t *testing.T) {
+	// Build a ModelPack artifact with the same raw annotation twice. This
+	// should behave like a duplicate layer, not a collision.
+	artifact := testutil.NewModelPackArtifact(
+		t,
+		modelpack.Model{
+			Config: modelpack.ModelConfig{Format: string(types.FormatGGUF)},
+		},
+		testutil.LayerSpec{
+			Path:         filepath.Join("..", "..", "assets", "dummy.gguf"),
+			RelativePath: "foo/model.gguf",
+			MediaType:    oci.MediaType(modelpack.MediaTypeWeightGGUF),
+		},
+		testutil.LayerSpec{
+			Path:         filepath.Join("..", "..", "assets", "dummy.gguf"),
+			RelativePath: "foo/model.gguf",
+			MediaType:    oci.MediaType(modelpack.MediaTypeWeightGGUF),
+		},
+	)
+
+	bundleRoot := t.TempDir()
+	bundle, err := UnpackFromLayers(bundleRoot, artifact)
+	if err != nil {
+		t.Fatalf("Expected duplicate annotation to be ignored, got: %v", err)
+	}
+	if bundle.ggufFile != filepath.Join("foo", "model.gguf") {
+		t.Errorf("Expected ggufFile to track unpacked path, got: %s", bundle.ggufFile)
+	}
+	if _, err := os.Stat(bundle.GGUFPath()); err != nil {
+		t.Fatalf("Expected GGUF file to exist after unpack, got: %v", err)
 	}
 }
 

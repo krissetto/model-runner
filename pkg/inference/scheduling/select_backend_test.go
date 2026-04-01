@@ -260,6 +260,20 @@ func TestSelectBackendForModel(t *testing.T) {
 			},
 			expectedBackend: "llamacpp",
 		},
+		{
+			name: "ModelPack DDUF without format field selects diffusers",
+			backends: map[string]inference.Backend{
+				"llamacpp":     llamacppBackend,
+				diffusers.Name: diffusersBackend,
+			},
+			defaultBackend: llamacppBackend,
+			platform:       mockPlatformSupport{diffusers: true},
+			model: &mockModel{
+				config:    &types.Config{},
+				ddufPaths: []string{"model.dduf"},
+			},
+			expectedBackend: diffusers.Name,
+		},
 	}
 
 	for _, tt := range tests {

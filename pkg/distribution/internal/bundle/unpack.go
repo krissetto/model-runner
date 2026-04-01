@@ -524,6 +524,30 @@ func validatePathWithinDirectory(baseDir, targetPath string) error {
 	return nil
 }
 
+// sanitizeRelativePath strips leading ".." segments from a path while
+// preserving the remaining directory structure. For example:
+//
+//	"../../home/user/text_encoder/model.safetensors" → "home/user/text_encoder/model.safetensors"
+//	"../model.gguf" → "model.gguf"
+//
+// This is safer than filepath.Base which would flatten the entire path,
+// losing nested directory structure and causing silent collisions.
+func sanitizeRelativePath(p string) string {
+	// Normalize to forward slashes and clean
+	cleaned := filepath.ToSlash(filepath.Clean(p))
+
+	// Strip leading "../" segments
+	for strings.HasPrefix(cleaned, "../") {
+		cleaned = cleaned[len("../"):]
+	}
+	// Handle the case where the entire path is ".."
+	if cleaned == ".." {
+		return ""
+	}
+
+	return cleaned
+}
+
 func extractTarArchiveFromReader(r io.Reader, destDir string) error {
 	// Get absolute path of destination directory for security checks
 	absDestDir, err := filepath.Abs(destDir)
@@ -664,6 +688,11 @@ func UnpackFromLayers(dir string, model types.ModelArtifact) (*Bundle, error) {
 		GetDescriptor() oci.Descriptor
 	}
 
+	// Track destination paths to detect collisions from sanitization.
+	// Maps a resolved destination path to the original raw annotation so the
+	// collision error can point to the conflicting source paths.
+	destPaths := make(map[string]string)
+
 	// Iterate through all layers and unpack using annotations
 	for _, layer := range layers {
 		mediaType, err := layer.MediaType()
@@ -682,15 +711,16 @@ func UnpackFromLayers(dir string, model types.ModelArtifact) (*Bundle, error) {
 		if !exists || relPath == "" {
 			continue
 		}
+		rawAnnotation := relPath
 
 		// Validate the path to prevent directory traversal.
 		// Some packaging tools (e.g., modctl) may produce annotations with
 		// ".." components when the model was packaged using an absolute path.
-		// In that case, fall back to just the filename to safely extract the file.
+		// In that case, strip leading ".." segments while preserving the
+		// remaining directory structure to avoid flattening nested layouts.
 		if err := validatePathWithinDirectory(modelDir, relPath); err != nil {
-			sanitizedPath := filepath.Base(relPath)
-			// Re-validate the sanitized path to prevent directory traversal attacks.
-			// filepath.Base can return unsafe values like ".", "..", or "/".
+			sanitizedPath := sanitizeRelativePath(relPath)
+			// Re-validate the sanitized path to ensure it's safe.
 			if err2 := validatePathWithinDirectory(modelDir, sanitizedPath); err2 != nil {
 				return nil, fmt.Errorf("invalid filepath annotation %q could not be sanitized: %w", relPath, err)
 			}
@@ -701,7 +731,22 @@ func UnpackFromLayers(dir string, model types.ModelArtifact) (*Bundle, error) {
 		relPath = filepath.FromSlash(relPath)
 		destPath := filepath.Join(modelDir, relPath)
 
-		// Skip if file already exists
+		// Detect collisions: two different annotations mapping to the same destination
+		if origAnnotation, exists := destPaths[destPath]; exists {
+			if origAnnotation != rawAnnotation {
+				return nil, fmt.Errorf(
+					"filepath collision: annotations %q and %q both resolve to %q",
+					origAnnotation,
+					rawAnnotation,
+					destPath,
+				)
+			}
+			// Same annotation seen twice (duplicate layer); skip silently.
+			continue
+		}
+		destPaths[destPath] = rawAnnotation
+
+		// Skip if file already exists on disk (from a previous unpack)
 		if _, err := os.Stat(destPath); err == nil {
 			continue
 		}
