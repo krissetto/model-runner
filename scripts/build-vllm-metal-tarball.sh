@@ -57,7 +57,10 @@ curl -fsSL -O "https://github.com/vllm-project/vllm/releases/download/v$VLLM_VER
 tar xf "vllm-$VLLM_VERSION.tar.gz"
 cd "vllm-$VLLM_VERSION"
 uv pip install --python "$PYTHON_DIR/bin/python3" --system -r requirements/cpu.txt --index-strategy unsafe-best-match
-uv pip install --python "$PYTHON_DIR/bin/python3" --system .
+# TODO: remove -Wno-parentheses once vllm-project/vllm#38801 is in a release and VLLM_VERSION is bumped past it.
+# Apple Clang 21 (Xcode 26+) promotes -Wparentheses to an error for chained comparisons like `0 < M <= 8` in
+# vllm's CPU attention headers. Clang 17 (Xcode 16.x, used in CI) only warns.
+CXXFLAGS="-Wno-parentheses" uv pip install --python "$PYTHON_DIR/bin/python3" --system .
 cd "$WORK_DIR"
 rm -rf "vllm-$VLLM_VERSION" "vllm-$VLLM_VERSION.tar.gz"
 
