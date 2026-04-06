@@ -4,6 +4,9 @@ on:
   workflow_dispatch:
   pull_request:
     branches: [ main ]
+    paths:
+      - '**'
+      - 'llamacpp/native/vendor/llama.cpp'
   push:
     branches: [ main ]
 
