@@ -206,7 +206,25 @@ func TestGetArgs(t *testing.T) {
 				"--model", modelPath,
 				"--host", socket,
 				"--embeddings",
-				"--ctx-size", "2096", // model config takes precedence
+				"--ctx-size", "1234", // backend config takes precedence
+				"--jinja",
+			),
+		},
+		{
+			name: "context size from model config when no backend config",
+			mode: inference.BackendModeEmbedding,
+			bundle: &fakeBundle{
+				ggufPath: modelPath,
+				config: &types.Config{
+					ContextSize: int32ptr(2096),
+				},
+			},
+			config: nil,
+			expected: append(slices.Clone(baseArgs),
+				"--model", modelPath,
+				"--host", socket,
+				"--embeddings",
+				"--ctx-size", "2096",
 				"--jinja",
 			),
 		},
