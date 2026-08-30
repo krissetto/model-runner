@@ -50,6 +50,13 @@ func TestValidateRuntimeFlags(t *testing.T) {
 			description: "Flags with = format should pass",
 		},
 		{
+			name:        "llama.cpp: reasoning preservation flags allowed",
+			backend:     "llama.cpp",
+			flags:       []string{"--reasoning-preserve", "--no-reasoning-preserve"},
+			expectError: false,
+			description: "Reasoning preservation flags supported by the pinned llama.cpp should pass",
+		},
+		{
 			name:        "llama.cpp: reject non-allowed flag",
 			backend:     "llama.cpp",
 			flags:       []string{"--log-file", "test.log"},

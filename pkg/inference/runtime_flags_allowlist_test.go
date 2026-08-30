@@ -160,6 +160,7 @@ func TestLlamaCppAllowedFlags_Categories(t *testing.T) {
 		"mode": {
 			"--embeddings", "--embedding", "--reranking", "--rerank",
 			"--metrics", "--no-metrics", "--jinja", "--no-jinja",
+			"--reasoning-preserve", "--no-reasoning-preserve",
 		},
 		"speculative": {
 			"--spec-draft-n-max", "--draft-n-max", "--draft-max", "--spec-draft-n-min", "--draft-n-min", "--draft-min",
